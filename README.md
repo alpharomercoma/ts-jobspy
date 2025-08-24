@@ -48,9 +48,9 @@ const jobs = await scrapeJobs({
   siteName: ['indeed', 'linkedin', 'ziprecruiter'], // 'glassdoor', 'google', 'bayt', 'naukri', 'bdjobs'
   searchTerm: 'software engineer',
   location: 'San Francisco, CA',
+  countryIndeed: 'USA', // Required for Indeed - supports 60+ countries
   resultsWanted: 20,
   hoursOld: 72,
-  countryIndeed: 'USA',
 
   // linkedinFetchDescription: true, // gets more info such as description, direct job url (slower)
   // proxies: ['208.195.175.46:65095', '208.195.175.45:65095', 'localhost'],
@@ -112,7 +112,7 @@ interface ScrapeJobsOptions {
 #### Supported Sites
 
 - **LinkedIn**: Global search using `location` parameter
-- **Indeed**: Supports most countries with `countryIndeed` parameter
+- **Indeed**: Supports 60+ countries with strongly typed `countryIndeed` parameter (required)
 - **ZipRecruiter**: US/Canada only, uses `location` parameter
 - **Glassdoor**: Supports major countries (requires `countryIndeed`)
 - **Google**: Global job search with advanced filtering
@@ -120,18 +120,56 @@ interface ScrapeJobsOptions {
 - **Bayt**: Middle East job portal with robust parsing
 - **BDJobs**: Bangladesh job portal with comprehensive data extraction
 
-#### Supported Countries
+#### Supported Countries (Indeed / Glassdoor)
 
-| Country | Indeed | Glassdoor |
-|---------|--------|-----------|
-| USA | ✅ | ✅ |
-| Canada | ✅ | ✅ |
-| UK | ✅ | ✅ |
-| Germany | ✅ | ✅ |
-| France | ✅ | ✅ |
-| Australia | ✅ | ✅ |
-| India | ✅ | ✅ |
-| And many more... | | |
+The `countryIndeed` parameter is **required** for Indeed and used for Glassdoor. It is restricted to the countries supported by the original JobSpy package. Entries marked with ⭐ have Glassdoor support.
+
+|                      |              |            |                |
+|----------------------|--------------|------------|----------------|
+| Argentina            | Australia ⭐  | Austria ⭐  | Bahrain        |
+| Belgium ⭐            | Brazil ⭐     | Canada ⭐   | Chile          |
+| China                | Colombia     | Costa Rica | Czech Republic |
+| Denmark              | Ecuador      | Egypt      | Finland        |
+| France ⭐             | Germany ⭐    | Greece     | Hong Kong ⭐    |
+| Hungary              | India ⭐      | Indonesia  | Ireland ⭐      |
+| Israel               | Italy ⭐      | Japan      | Kuwait         |
+| Luxembourg           | Malaysia     | Mexico ⭐   | Morocco        |
+| Netherlands ⭐        | New Zealand ⭐| Nigeria    | Norway         |
+| Oman                 | Pakistan     | Panama     | Peru           |
+| Philippines          | Poland       | Portugal   | Qatar          |
+| Romania              | Saudi Arabia | Singapore ⭐| South Africa   |
+| South Korea          | Spain ⭐      | Sweden     | Switzerland ⭐  |
+| Taiwan               | Thailand     | Turkey     | Ukraine        |
+| United Arab Emirates | UK ⭐         | USA ⭐      | Uruguay        |
+| Venezuela            | Vietnam ⭐    |            |                |
+
+Notes:
+- Use `location` to further narrow down by city/state when needed.
+- Aliases are supported for convenience (e.g., `'us'`, `'united states'`, `'america'`, `'uk'`, `'britain'`, `'czechia'`, `'hk'`, `'nz'`, `'uae'`, `'ksa'`, `'za'`).
+
+```typescript
+// Using Country enum (recommended for type safety)
+import { Country } from 'ts-jobspy';
+
+const jobs = await scrapeJobs({
+  site_name: ['indeed'],
+  countryIndeed: Country.GERMANY, // Strongly typed
+  search_term: 'software engineer',
+  location: 'Berlin'
+});
+
+// Error handling for unsupported countries
+try {
+  const jobs = await scrapeJobs({
+    site_name: ['indeed'],
+    search_term: 'software engineer',
+    countryIndeed: 'russia', // Not supported - will throw error
+    results_wanted: 10
+  });
+} catch (error) {
+  console.error('Error:', error.message);
+}
+```
 
 ## Output Schema
 

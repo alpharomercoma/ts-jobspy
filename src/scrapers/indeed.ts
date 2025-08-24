@@ -213,7 +213,7 @@ export class IndeedScraper extends Scraper {
       logger.info(`Scraping page ${page} / ${Math.ceil(resultsWanted / 100)}`);
 
       try {
-        const { jobs: pageJobs, nextCursor } = await this.scrapePage(input, cursor);
+        const { jobs: pageJobs, nextCursor }: { jobs: JobPost[]; nextCursor: string | null } = await this.scrapePage(input, cursor);
 
         if (pageJobs.length === 0) {
           logger.info(`No jobs found on page ${page}`);

@@ -181,7 +181,7 @@ export class GlassdoorScraper extends Scraper {
         logger.info(`Scraping page ${page}/${rangeEnd - 1}`);
 
         try {
-          const { jobs: pageJobs, nextCursor } = await this.fetchJobsPage(
+          const { jobs: pageJobs, nextCursor }: { jobs: JobPost[]; nextCursor: string | null } = await this.fetchJobsPage(
             input,
             locationInfo,
             page,

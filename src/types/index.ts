@@ -16,22 +16,17 @@ export enum Country {
   AUSTRALIA = 'australia',
   AUSTRIA = 'austria',
   BAHRAIN = 'bahrain',
-  BANGLADESH = 'bangladesh',
   BELGIUM = 'belgium',
-  BULGARIA = 'bulgaria',
   BRAZIL = 'brazil',
   CANADA = 'canada',
   CHILE = 'chile',
   CHINA = 'china',
   COLOMBIA = 'colombia',
   COSTA_RICA = 'costa rica',
-  CROATIA = 'croatia',
-  CYPRUS = 'cyprus',
   CZECH_REPUBLIC = 'czech republic',
   DENMARK = 'denmark',
   ECUADOR = 'ecuador',
   EGYPT = 'egypt',
-  ESTONIA = 'estonia',
   FINLAND = 'finland',
   FRANCE = 'france',
   GERMANY = 'germany',
@@ -45,11 +40,8 @@ export enum Country {
   ITALY = 'italy',
   JAPAN = 'japan',
   KUWAIT = 'kuwait',
-  LATVIA = 'latvia',
-  LITHUANIA = 'lithuania',
   LUXEMBOURG = 'luxembourg',
   MALAYSIA = 'malaysia',
-  MALTA = 'malta',
   MEXICO = 'mexico',
   MOROCCO = 'morocco',
   NETHERLANDS = 'netherlands',
@@ -67,8 +59,6 @@ export enum Country {
   ROMANIA = 'romania',
   SAUDI_ARABIA = 'saudi arabia',
   SINGAPORE = 'singapore',
-  SLOVAKIA = 'slovakia',
-  SLOVENIA = 'slovenia',
   SOUTH_AFRICA = 'south africa',
   SOUTH_KOREA = 'south korea',
   SPAIN = 'spain',
@@ -84,9 +74,20 @@ export enum Country {
   URUGUAY = 'uruguay',
   VENEZUELA = 'venezuela',
   VIETNAM = 'vietnam',
-  US_CANADA = 'usa/ca',
+  // Internal use for specific scrapers
+  US_CANADA = 'us_canada',
   WORLDWIDE = 'worldwide',
 }
+
+
+/**
+ * Supported countries for Indeed scraping with autocomplete.
+ * Derived from Country enum values plus common aliases.
+ */
+export type SupportedCountry = `${Country}` | 
+  // Common aliases
+  'czechia' | 'türkiye' | 'korea' | 'uae' | 'emirates' | 'nz' | 'hk' |
+  'ksa' | 'za' | 'united kingdom' | 'britain' | 'us' | 'united states' | 'america';
 
 export enum CompensationInterval {
   YEARLY = 'yearly',
@@ -129,7 +130,7 @@ export enum SalarySource {
 }
 
 export interface Location {
-  country?: Country | string;
+  country?: string;
   city?: string;
   state?: string;
 }
@@ -139,6 +140,19 @@ export interface Compensation {
   minAmount?: number;
   maxAmount?: number;
   currency?: string;
+}
+
+export interface ScrapeJobsOptions {
+  siteName?: SiteName | SiteName[];
+  searchTerm?: string;
+  location?: string;
+  resultsWanted?: number;
+  /**
+   * Country for Indeed scraping. Required when using Indeed.
+   * Provides autocomplete for all supported countries.
+   * @example 'usa' | 'uk' | 'canada' | 'germany' | 'france' | 'australia'
+   */
+  countryIndeed?: SupportedCountry;
 }
 
 export interface JobPost {
