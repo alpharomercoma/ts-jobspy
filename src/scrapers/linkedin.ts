@@ -1,3 +1,4 @@
+import * as cheerio from 'cheerio';
 import { Scraper } from '../models';
 import {
   Site,
@@ -48,7 +49,7 @@ export class LinkedInScraper extends Scraper {
 
   async scrape(input: ScraperInput): Promise<JobResponse> {
     logger.info('Starting LinkedIn scrape');
-    
+
     const jobs: JobPost[] = [];
     const resultsWanted = input.resultsWanted || 15;
     const offset = input.offset || 0;
@@ -56,10 +57,10 @@ export class LinkedInScraper extends Scraper {
 
     while (jobs.length < resultsWanted) {
       logger.info(`Scraping LinkedIn jobs, start: ${start}`);
-      
+
       try {
         const pageJobs = await this.scrapePage(input, start);
-        
+
         if (pageJobs.length === 0) {
           logger.info('No more jobs found');
           break;
@@ -78,7 +79,7 @@ export class LinkedInScraper extends Scraper {
 
     const finalJobs = jobs.slice(0, resultsWanted);
     logger.info(`Scraped ${finalJobs.length} jobs from LinkedIn`);
-    
+
     return { jobs: finalJobs };
   }
 
@@ -112,19 +113,19 @@ export class LinkedInScraper extends Scraper {
 
   private buildSearchParams(input: ScraperInput, start: number): string {
     const params = new URLSearchParams();
-    
+
     if (input.searchTerm) {
       params.append('keywords', input.searchTerm);
     }
-    
+
     if (input.location) {
       params.append('location', input.location);
     }
-    
+
     if (input.distance) {
       params.append('distance', input.distance.toString());
     }
-    
+
     if (input.jobType) {
       const jobTypeMapping: Record<JobType, string> = {
         [JobType.FULL_TIME]: 'F',
@@ -138,56 +139,100 @@ export class LinkedInScraper extends Scraper {
         [JobType.OTHER]: 'O',
         [JobType.SUMMER]: '',
       };
-      
+
       const typeCode = jobTypeMapping[input.jobType];
       if (typeCode) {
         params.append('f_JT', typeCode);
       }
     }
-    
+
     if (input.isRemote) {
       params.append('f_WT', '2'); // Remote work type
     }
-    
+
     if (input.easyApply) {
       params.append('f_AL', 'true');
     }
-    
+
     if (input.hoursOld) {
       const timeMapping: Record<number, string> = {
         24: 'r86400',
         168: 'r604800', // 1 week
         720: 'r2592000', // 1 month
       };
-      
+
       const timeFilter = timeMapping[input.hoursOld] || 'r86400';
       params.append('f_TPR', timeFilter);
     }
-    
+
     if (input.linkedinCompanyIds && input.linkedinCompanyIds.length > 0) {
       params.append('f_C', input.linkedinCompanyIds.join(','));
     }
-    
+
     params.append('start', start.toString());
-    
+
     return params.toString();
   }
 
   private parseJobsFromHtml(html: string, input: ScraperInput): JobPost[] {
-    // This is a simplified parser - in a real implementation, you'd use cheerio
-    // to parse the HTML and extract job data
+    const $ = cheerio.load(html);
+    const jobCards = $('div.base-search-card');
     const jobs: JobPost[] = [];
-    
-    // For now, return empty array as LinkedIn's HTML parsing is complex
-    // and would require detailed reverse engineering of their current structure
-    logger.warn('LinkedIn HTML parsing not fully implemented - this is a placeholder');
-    
+
+    jobCards.each((index, element) => {
+        const jobCard = $(element);
+        const hrefTag = jobCard.find('a.base-card__full-link');
+        const href = hrefTag.attr('href')?.split('?')[0];
+        if (!href) return;
+
+        const jobIdMatch = href.match(/(\d+)$/);
+        if (!jobIdMatch) return;
+        const jobId = jobIdMatch[1];
+
+        if (this.seenUrls.has(jobId)) {
+            return;
+        }
+        this.seenUrls.add(jobId);
+
+        const titleTag = jobCard.find('span.sr-only');
+        const title = titleTag.text().trim() || 'N/A';
+
+        const companyTag = jobCard.find('h4.base-search-card__subtitle a');
+        const companyName = companyTag.text().trim() || 'N/A';
+        const companyUrl = companyTag.attr('href')?.split('?')[0] || '';
+
+        const metadataCard = jobCard.find('div.base-search-card__metadata');
+        const locationStr = metadataCard.find('span.job-search-card__location').text().trim();
+        const location = this.parseLocation(locationStr);
+
+        const datetimeTag = metadataCard.find('time.job-search-card__listdate');
+        const postedDate = datetimeTag.attr('datetime') ? new Date(datetimeTag.attr('datetime')!) : undefined;
+
+        const salaryTag = jobCard.find('span.job-search-card__salary-info');
+        let compensation: Compensation | undefined;
+        if (salaryTag.length > 0) {
+            // Placeholder for salary parsing logic
+        }
+
+        const jobPost: JobPost = {
+            id: `li-${jobId}`,
+            title,
+            companyName,
+            companyUrl,
+            location,
+            jobUrl: href,
+            datePosted: postedDate?.toISOString().split('T')[0],
+        };
+
+        jobs.push(jobPost);
+    });
+
     return jobs;
   }
 
   private parseJobType(employmentType?: string): JobType[] {
     if (!employmentType) return [];
-    
+
     const typeMapping: Record<string, JobType> = {
       'Full-time': JobType.FULL_TIME,
       'Part-time': JobType.PART_TIME,
@@ -196,14 +241,14 @@ export class LinkedInScraper extends Scraper {
       'Internship': JobType.INTERNSHIP,
       'Volunteer': JobType.VOLUNTEER,
     };
-    
+
     const jobType = typeMapping[employmentType];
     return jobType ? [jobType] : [];
   }
 
   private parseLocation(locationStr: string): Location {
     const parts = locationStr.split(',').map(p => p.trim());
-    
+
     if (parts.length >= 2) {
       return {
         city: parts[0],
@@ -215,7 +260,7 @@ export class LinkedInScraper extends Scraper {
         city: parts[0],
       };
     }
-    
+
     return {};
   }
 
@@ -228,7 +273,7 @@ export class LinkedInScraper extends Scraper {
       '5': 'Director',
       '6': 'Executive',
     };
-    
+
     return level ? levelMapping[level] : undefined;
   }
 }

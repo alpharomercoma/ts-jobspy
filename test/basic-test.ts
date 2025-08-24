@@ -13,7 +13,7 @@ async function testBasicScraping() {
     });
 
     console.log(`\n✅ Successfully scraped ${jobs.length} jobs`);
-    
+
     if (jobs.length > 0) {
       console.log('\nFirst job:');
       const firstJob = jobs[0];

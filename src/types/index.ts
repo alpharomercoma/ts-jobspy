@@ -104,13 +104,24 @@ export enum DescriptionFormat {
 export enum Site {
   LINKEDIN = 'linkedin',
   INDEED = 'indeed',
-  ZIP_RECRUITER = 'zip_recruiter',
+  ZIP_RECRUITER = 'ziprecruiter',
   GLASSDOOR = 'glassdoor',
   GOOGLE = 'google',
   BAYT = 'bayt',
   NAUKRI = 'naukri',
   BDJOBS = 'bdjobs',
 }
+
+// Strict string literal types for site names (exact match only)
+export type SiteName = 
+  | 'linkedin'
+  | 'indeed'
+  | 'ziprecruiter'
+  | 'glassdoor'
+  | 'google'
+  | 'bayt'
+  | 'naukri'
+  | 'bdjobs';
 
 export enum SalarySource {
   DIRECT_DATA = 'direct_data',

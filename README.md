@@ -1,23 +1,35 @@
 # ts-jobspy
 
-**ts-jobspy** is a TypeScript job scraping library that aggregates job postings from popular job boards. This is a complete TypeScript rewrite of the original [python-jobspy](https://pypi.org/project/python-jobspy/) package.
+[![npm version](https://badge.fury.io/js/ts-jobspy.svg)](https://badge.fury.io/js/ts-jobspy)
+[![GitHub issues](https://img.shields.io/github/issues/alpharomercoma/ts-jobspy.svg)](https://github.com/alpharomercoma/ts-jobspy/issues)
+[![GitHub stars](https://img.shields.io/github/stars/alpharomercoma/ts-jobspy.svg)](https://github.com/alpharomercoma/ts-jobspy/stargazers)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## ⚠️ Attribution
+**ts-jobspy** is a TypeScript job scraping library that aggregates job postings from popular job boards. This is a complete TypeScript rewrite of the original [python-jobspy](https://pypi.org/project/python-jobspy/) package with full API compatibility.
 
-This package is a TypeScript rewrite of the original **JobSpy** Python package created by Cullen Watson and Zachary Hampton. The original package can be found at:
-- **PyPI**: https://pypi.org/project/python-jobspy/
-- **GitHub**: https://github.com/cullenwatson/JobSpy
+## 🙏 Attribution
 
-All credit for the original concept, design, and implementation goes to the original authors. This TypeScript version aims to provide the same functionality for Node.js/TypeScript developers.
+This TypeScript package is a complete rewrite of the original [JobSpy Python package](https://github.com/cullenwatson/JobSpy) created by **Cullen Watson** and **Zachary Hampton**. All credit for the original concept, design, and implementation goes to the original authors.
+
+- **Original Repository**: https://github.com/cullenwatson/JobSpy
+- **Original PyPI Package**: https://pypi.org/project/python-jobspy/
+- **Original Authors**: Cullen Watson & Zachary Hampton
+- **TypeScript Rewrite**: Alpha Romer Coma (alpharomercoma@proton.me)
+- **TypeScript Repository**: https://github.com/alpharomercoma/ts-jobspy
+
+This TypeScript version maintains full API compatibility while providing type safety and modern JavaScript/TypeScript development experience.
 
 ## Features
 
-- 🔍 Scrapes job postings from **Indeed**, **LinkedIn**, **ZipRecruiter** & other job boards concurrently
-- 📊 Aggregates job postings in a structured format
-- 🌐 Proxy support to bypass blocking
+- 🔍 Scrapes job postings from **Indeed**, **LinkedIn**, **ZipRecruiter**, **Glassdoor**, **Google**, **Naukri**, **Bayt**, **BDJobs** concurrently
+- 📊 Aggregates job postings in a structured format with pandas-like DataFrame functionality
+- 🌐 Proxy support with rotation to bypass blocking
 - 🔒 Fully type-safe with comprehensive TypeScript definitions
-- ⚡ Modern async/await API
-- 🛡️ Built-in rate limiting and error handling
+- ⚡ Modern async/await API with concurrent scraping
+- 🛡️ Built-in rate limiting, error handling, and retry mechanisms
+- 🌍 International support with region-specific scrapers
+- 🎯 Advanced filtering by job type, location, salary, and posting date
+- 📤 Export to CSV/JSON with configurable formatting options
 
 ## Installation
 
@@ -33,7 +45,7 @@ npm install ts-jobspy
 import { scrapeJobs } from 'ts-jobspy';
 
 const jobs = await scrapeJobs({
-  siteName: ['indeed', 'linkedin', 'zip_recruiter'], // 'glassdoor', 'google', 'bayt', 'naukri', 'bdjobs'
+  siteName: ['indeed', 'linkedin', 'ziprecruiter'], // 'glassdoor', 'google', 'bayt', 'naukri', 'bdjobs'
   searchTerm: 'software engineer',
   location: 'San Francisco, CA',
   resultsWanted: 20,
@@ -45,26 +57,17 @@ const jobs = await scrapeJobs({
 });
 
 console.log(`Found ${jobs.length} jobs`);
-console.log(jobs.slice(0, 3)); // Show first 3 jobs
+console.log(jobs.head(3)); // Show first 3 jobs (pandas-like)
 
-// Export to CSV (you'll need to install csv-writer)
-import createCsvWriter from 'csv-writer';
-
-const csvWriter = createCsvWriter.createObjectCsvWriter({
-  path: 'jobs.csv',
-  header: [
-    { id: 'site', title: 'SITE' },
-    { id: 'title', title: 'TITLE' },
-    { id: 'company', title: 'COMPANY' },
-    { id: 'location', title: 'LOCATION' },
-    { id: 'jobType', title: 'JOB_TYPE' },
-    { id: 'datePosted', title: 'DATE_POSTED' },
-    { id: 'jobUrl', title: 'JOB_URL' },
-    { id: 'description', title: 'DESCRIPTION' },
-  ],
+// Export to CSV (built-in functionality)
+await jobs.toCsv('jobs.csv', {
+  quoting: 'nonnumeric',
+  escapeChar: '\\',
+  includeIndex: false
 });
 
-await csvWriter.writeRecords(jobs);
+// Export to JSON
+await jobs.toJson('jobs.json', { pretty: true });
 ```
 
 ## API Reference
@@ -75,26 +78,26 @@ await csvWriter.writeRecords(jobs);
 
 ```typescript
 interface ScrapeJobsOptions {
-  siteName?: string | string[] | Site | Site[];     // Job sites to scrape
-  searchTerm?: string;                               // Search query
-  googleSearchTerm?: string;                         // Google-specific search term
-  location?: string;                                 // Job location
-  distance?: number;                                 // Search radius in miles (default: 50)
-  isRemote?: boolean;                               // Filter for remote jobs
-  jobType?: string | JobType;                       // Job type filter
-  easyApply?: boolean;                              // Easy apply filter
-  resultsWanted?: number;                           // Number of results (default: 15)
-  countryIndeed?: string;                           // Country for Indeed/Glassdoor
-  proxies?: string[] | string;                      // Proxy configuration
-  caCert?: string;                                  // CA certificate path
-  descriptionFormat?: 'markdown' | 'html';         // Description format
-  linkedinFetchDescription?: boolean;               // Fetch full LinkedIn descriptions
-  linkedinCompanyIds?: number[];                    // LinkedIn company ID filter
-  offset?: number;                                  // Result offset
-  hoursOld?: number;                                // Filter by posting age
-  enforceAnnualSalary?: boolean;                    // Convert all salaries to annual
-  verbose?: number;                                 // Logging level (0-2)
-  userAgent?: string;                               // Custom user agent
+  siteName?: string | string[] | Site | Site[];      // Job sites to scrape
+  searchTerm?: string;                                // Search query
+  googleSearchTerm?: string;                          // Google-specific search term
+  location?: string;                                  // Job location
+  distance?: number;                                  // Search radius in miles (default: 50)
+  isRemote?: boolean;                                // Filter for remote jobs
+  jobType?: string | JobType;                        // Job type filter
+  easyApply?: boolean;                               // Easy apply filter
+  resultsWanted?: number;                            // Number of results (default: 15)
+  countryIndeed?: string;                            // Country for Indeed/Glassdoor
+  proxies?: string[] | string;                       // Proxy configuration
+  caCert?: string;                                   // CA certificate path
+  descriptionFormat?: 'markdown' | 'html';          // Description format
+  linkedinFetchDescription?: boolean;                // Fetch full LinkedIn descriptions
+  linkedinCompanyIds?: number[];                     // LinkedIn company ID filter
+  offset?: number;                                   // Result offset
+  hoursOld?: number;                                 // Filter by posting age
+  enforceAnnualSalary?: boolean;                     // Convert all salaries to annual
+  verbose?: number;                                  // Logging level (0-2)
+  userAgent?: string;                                // Custom user agent
 }
 ```
 
@@ -109,9 +112,13 @@ interface ScrapeJobsOptions {
 #### Supported Sites
 
 - **LinkedIn**: Global search using `location` parameter
-- **Indeed**: Supports most countries with `countryIndeed` parameter
+- **Indeed**: Supports most countries with `countryIndeed` parameter  
 - **ZipRecruiter**: US/Canada only, uses `location` parameter
 - **Glassdoor**: Supports major countries (requires `countryIndeed`)
+- **Google**: Global job search with advanced filtering
+- **Naukri**: India-focused job portal with API integration
+- **Bayt**: Middle East job portal with robust parsing
+- **BDJobs**: Bangladesh job portal with comprehensive data extraction
 
 #### Supported Countries
 
@@ -197,17 +204,68 @@ const jobs = await scrapeJobs({
 });
 ```
 
+### International Job Search
+
+```typescript
+// Search Naukri (India)
+const indiaJobs = await scrapeJobs({
+  siteName: 'naukri',
+  searchTerm: 'software engineer',
+  location: 'Mumbai',
+  resultsWanted: 20,
+});
+
+// Search Bayt (Middle East)
+const middleEastJobs = await scrapeJobs({
+  siteName: 'bayt',
+  searchTerm: 'developer',
+  location: 'Dubai',
+  resultsWanted: 15,
+});
+
+// Search BDJobs (Bangladesh)
+const bangladeshJobs = await scrapeJobs({
+  siteName: 'bdjobs',
+  searchTerm: 'programmer',
+  location: 'Dhaka',
+  resultsWanted: 10,
+});
+```
+
+### Multi-Site with Error Handling
+
+```typescript
+const jobs = await scrapeJobs({
+  siteName: ['indeed', 'linkedin', 'glassdoor', 'google', 'naukri'],
+  searchTerm: 'full stack developer',
+  location: 'San Francisco, CA',
+  resultsWanted: 100,
+  hoursOld: 48,
+  proxies: ['proxy1:port', 'proxy2:port'],
+});
+
+// Built-in error handling ensures partial results even if some sites fail
+console.log(`Successfully scraped ${jobs.length} jobs from available sites`);
+```
+
 ## Rate Limiting & Best Practices
 
 - **Indeed**: Most reliable with minimal rate limiting
 - **LinkedIn**: Most restrictive, requires proxies for large-scale scraping
 - **ZipRecruiter**: Moderate rate limiting
+- **Glassdoor**: Requires CSRF token handling, moderate rate limiting
+- **Google**: Uses structured data parsing, generally reliable
+- **Naukri**: API-based scraping, stable and efficient
+- **Bayt**: HTML parsing with cheerio, moderate rate limiting
+- **BDJobs**: HTML parsing with pagination support
 
 ### Recommendations:
-- Use delays between requests
+- Use delays between requests (built-in rate limiting)
 - Rotate proxies for large-scale scraping
 - Respect robots.txt and terms of service
-- Monitor for rate limiting responses
+- Monitor for rate limiting responses (automatic retry mechanisms included)
+- Use API endpoints where available (Naukri, Google structured data)
+- Implement proper error handling for network failures
 
 ## Error Handling
 

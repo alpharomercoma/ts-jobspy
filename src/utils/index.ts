@@ -1,8 +1,15 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
-import TurndownService from 'turndown';
-import { CompensationInterval, Compensation } from '../types';
+import { CompensationInterval, Compensation, JobType } from '../types';
+
+export * from './logger';
+export * from './salary';
+export * from './email';
+export * from './markdown';
+
+// Export htmlToMarkdown as markdownConverter for backward compatibility
+export { htmlToMarkdown as markdownConverter } from './markdown';
 
 export class Logger {
   private name: string;
@@ -138,30 +145,28 @@ export class SessionManager {
 }
 
 export class MarkdownConverter {
-  private turndownService: TurndownService;
-
-  constructor() {
-    this.turndownService = new TurndownService({
-      headingStyle: 'atx',
-      bulletListMarker: '-',
-      codeBlockStyle: 'fenced',
-    });
-
-    // Custom rules for better job description formatting
-    this.turndownService.addRule('removeAttributes', {
-      filter: (node: any) => {
-        if (node.nodeName === 'DIV' || node.nodeName === 'SPAN') {
-          return true;
-        }
-        return false;
-      },
-      replacement: (content: any) => content,
-    });
-  }
+  constructor() {}
 
   convert(html: string): string {
     if (!html) return '';
-    return this.turndownService.turndown(html).trim();
+    
+    // Simple HTML to text conversion without external dependencies
+    return html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<\/h[1-6]>/gi, '\n\n')
+      .replace(/<li>/gi, '- ')
+      .replace(/<\/li>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\n\s*\n\s*\n/g, '\n\n')
+      .trim();
   }
 }
 
@@ -172,6 +177,21 @@ export function extractEmailsFromText(text: string): string[] | null {
   const emails = text.match(emailRegex);
   
   return emails ? [...new Set(emails)] : null;
+}
+
+export function extractJobType(text: string, jobTypes: JobType[]): JobType[] | undefined {
+  if (!text) return undefined;
+
+  const foundTypes = new Set<JobType>();
+  const lowerText = text.toLowerCase();
+
+  for (const jobType of jobTypes) {
+    if (lowerText.includes(jobType.toLowerCase())) {
+      foundTypes.add(jobType);
+    }
+  }
+
+  return foundTypes.size > 0 ? Array.from(foundTypes) : undefined;
 }
 
 export function extractSalary(

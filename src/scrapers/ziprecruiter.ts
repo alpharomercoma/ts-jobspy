@@ -1,18 +1,17 @@
+import * as cheerio from 'cheerio';
 import { Scraper } from '../models';
 import {
-  Site,
-  ScraperInput,
-  JobResponse,
-  JobPost,
-  JobType,
-  CompensationInterval,
   Compensation,
+  CompensationInterval,
   DescriptionFormat,
+  JobPost,
+  JobResponse,
+  JobType,
   Location,
+  ScraperInput,
+  Site,
 } from '../types';
-import { SessionManager, createLogger, MarkdownConverter, extractEmailsFromText } from '../utils';
-import { LocationHelper, JobTypeHelper } from '../models';
-import * as cheerio from 'cheerio';
+import { MarkdownConverter, SessionManager, createLogger, extractEmailsFromText } from '../utils';
 
 const logger = createLogger('ZipRecruiter');
 
@@ -33,7 +32,7 @@ export class ZipRecruiterScraper extends Scraper {
 
   async scrape(input: ScraperInput): Promise<JobResponse> {
     logger.info('Starting ZipRecruiter scrape');
-    
+
     const jobs: JobPost[] = [];
     const resultsWanted = input.resultsWanted || 15;
     const offset = input.offset || 0;
@@ -41,10 +40,10 @@ export class ZipRecruiterScraper extends Scraper {
 
     while (jobs.length < resultsWanted) {
       logger.info(`Scraping ZipRecruiter page ${page}`);
-      
+
       try {
         const pageJobs = await this.scrapePage(input, page);
-        
+
         if (pageJobs.length === 0) {
           logger.info('No more jobs found');
           break;
@@ -63,7 +62,7 @@ export class ZipRecruiterScraper extends Scraper {
 
     const finalJobs = jobs.slice(offset, offset + resultsWanted);
     logger.info(`Scraped ${finalJobs.length} jobs from ZipRecruiter`);
-    
+
     return { jobs: finalJobs };
   }
 
@@ -71,45 +70,37 @@ export class ZipRecruiterScraper extends Scraper {
     const url = this.buildSearchUrl(input, page);
 
     try {
-      const response = await this.session.get(url, {
-        headers: {
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Referer': 'https://www.ziprecruiter.com/',
-          'Connection': 'keep-alive',
-          'Upgrade-Insecure-Requests': '1',
-        },
-      });
+      const response = await this.session.get(url);
 
       if (response.status !== 200) {
-        logger.warn(`ZipRecruiter responded with status ${response.status}`);
+        logger.warn(`ZipRecruiter API responded with status ${response.status}`);
         return [];
       }
 
-      return this.parseJobsFromHtml(response.data, input);
+      const jobData = response.data;
+      return this.parseJobsFromJson(jobData, input);
     } catch (error) {
-      logger.error('Error making ZipRecruiter request:', error);
+      logger.error('Error making ZipRecruiter API request:', error);
       return [];
     }
   }
 
   private buildSearchUrl(input: ScraperInput, page: number): string {
-    const baseUrl = 'https://www.ziprecruiter.com/jobs/search';
+    const baseUrl = 'https://api.ziprecruiter.com/jobs-app/jobs';
     const params = new URLSearchParams();
-    
+
     if (input.searchTerm) {
       params.append('search', input.searchTerm);
     }
-    
+
     if (input.location) {
       params.append('location', input.location);
     }
-    
+
     if (input.distance) {
       params.append('radius', input.distance.toString());
     }
-    
+
     if (input.jobType) {
       const jobTypeMapping: Record<JobType, string> = {
         [JobType.FULL_TIME]: 'full_time',
@@ -123,17 +114,17 @@ export class ZipRecruiterScraper extends Scraper {
         [JobType.SUMMER]: '',
         [JobType.VOLUNTEER]: '',
       };
-      
+
       const typeValue = jobTypeMapping[input.jobType];
       if (typeValue) {
         params.append('employment_types', typeValue);
       }
     }
-    
+
     if (input.isRemote) {
       params.append('remote_jobs_only', 'true');
     }
-    
+
     if (input.hoursOld) {
       if (input.hoursOld <= 24) {
         params.append('days', '1');
@@ -143,157 +134,56 @@ export class ZipRecruiterScraper extends Scraper {
         params.append('days', '30');
       }
     }
-    
-    if (page > 1) {
-      params.append('page', page.toString());
-    }
-    
+
+    params.append('page', page.toString());
+
     return `${baseUrl}?${params.toString()}`;
   }
 
-  private parseJobsFromHtml(html: string, input: ScraperInput): JobPost[] {
-    const $ = cheerio.load(html);
+  private parseJobsFromJson(jobData: any, input: ScraperInput): JobPost[] {
     const jobs: JobPost[] = [];
+    const jobPosts = jobData.jobs || [];
 
-    $('.job_content').each((_, element) => {
-      try {
-        const job = this.parseJobElement($ as any, $(element), input);
-        if (job && !this.seenUrls.has(job.jobUrl)) {
-          this.seenUrls.add(job.jobUrl);
-          jobs.push(job);
-        }
-      } catch (error) {
-        logger.warn('Error parsing job element:', error);
+    for (const job of jobPosts) {
+      const jobUrl = `https://www.ziprecruiter.com/jobs//j?lvk=${job.listing_key}`;
+      if (this.seenUrls.has(jobUrl)) {
+        continue;
       }
-    });
+      this.seenUrls.add(jobUrl);
+
+      const jobPost: JobPost = {
+        id: `zr-${job.listing_key}`,
+        title: job.name,
+        companyName: job.hiring_company?.name,
+        location: {
+          city: job.job_city,
+          state: job.job_state,
+          country: job.job_country === 'US' ? 'USA' : 'canada',
+        },
+        jobUrl,
+        description: job.job_description,
+        jobType: this.parseJobType(job.employment_type),
+        datePosted: new Date(job.posted_time).toISOString().split('T')[0],
+        compensation: {
+            minAmount: job.compensation_min,
+            maxAmount: job.compensation_max,
+            currency: job.compensation_currency,
+            interval: job.compensation_interval === 'annual' ? CompensationInterval.YEARLY : job.compensation_interval,
+        }
+      };
+      jobs.push(jobPost);
+    }
 
     return jobs;
   }
 
-  private parseJobElement($: any, element: any, input: ScraperInput): JobPost | null {
-    const titleElement = element.find('h2.title a');
-    const title = titleElement.text().trim();
-    const jobUrl = titleElement.attr('href');
-    
-    if (!title || !jobUrl) {
-      return null;
-    }
 
-    const fullJobUrl = jobUrl.startsWith('http') ? jobUrl : `https://www.ziprecruiter.com${jobUrl}`;
-    
-    const companyName = element.find('.company_name a').text().trim() || 
-                       element.find('.company_name').text().trim();
-    
-    const locationText = element.find('.location').text().trim();
-    const location = this.parseLocation(locationText);
-    
-    const salaryText = element.find('.salary').text().trim();
-    const compensation = this.parseSalary(salaryText);
-    
-    const dateText = element.find('.time').text().trim();
-    const datePosted = this.parseDate(dateText);
-    
-    const descriptionElement = element.find('.job_snippet');
-    let description = descriptionElement.html() || '';
-    
-    if (input.descriptionFormat === DescriptionFormat.MARKDOWN && description) {
-      description = this.markdownConverter.convert(description);
-    }
-    
-    const jobTypeText = element.find('.employment_type').text().trim();
-    const jobTypes = this.parseJobType(jobTypeText);
-    
-    const isRemote = this.isJobRemote(locationText, description);
 
-    return {
-      id: `zr-${this.extractJobId(fullJobUrl)}`,
-      title,
-      companyName: companyName || undefined,
-      jobUrl: fullJobUrl,
-      location,
-      description: description || undefined,
-      jobType: jobTypes,
-      compensation,
-      datePosted,
-      emails: extractEmailsFromText(description) || undefined,
-      isRemote,
-    };
-  }
 
-  private parseLocation(locationText: string): Location {
-    if (!locationText) return {};
-    
-    const parts = locationText.split(',').map(p => p.trim());
-    
-    if (parts.length >= 2) {
-      return {
-        city: parts[0],
-        state: parts[1],
-      };
-    } else if (parts.length === 1) {
-      return {
-        city: parts[0],
-      };
-    }
-    
-    return {};
-  }
-
-  private parseSalary(salaryText: string): Compensation | undefined {
-    if (!salaryText) return undefined;
-    
-    // Extract salary range like "$50,000 - $70,000 a year"
-    const yearlyMatch = salaryText.match(/\$(\d+(?:,\d+)*)\s*-\s*\$(\d+(?:,\d+)*)\s*a\s*year/i);
-    if (yearlyMatch) {
-      return {
-        interval: CompensationInterval.YEARLY,
-        minAmount: parseInt(yearlyMatch[1].replace(/,/g, '')),
-        maxAmount: parseInt(yearlyMatch[2].replace(/,/g, '')),
-        currency: 'USD',
-      };
-    }
-    
-    // Extract hourly range like "$25 - $35 an hour"
-    const hourlyMatch = salaryText.match(/\$(\d+(?:\.\d+)?)\s*-\s*\$(\d+(?:\.\d+)?)\s*an?\s*hour/i);
-    if (hourlyMatch) {
-      return {
-        interval: CompensationInterval.HOURLY,
-        minAmount: parseFloat(hourlyMatch[1]),
-        maxAmount: parseFloat(hourlyMatch[2]),
-        currency: 'USD',
-      };
-    }
-    
-    return undefined;
-  }
-
-  private parseDate(dateText: string): string | undefined {
-    if (!dateText) return undefined;
-    
-    const now = new Date();
-    
-    if (dateText.includes('today')) {
-      return now.toISOString().split('T')[0];
-    } else if (dateText.includes('yesterday')) {
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      return yesterday.toISOString().split('T')[0];
-    } else if (dateText.includes('day')) {
-      const match = dateText.match(/(\d+)\s*day/);
-      if (match) {
-        const daysAgo = parseInt(match[1]);
-        const date = new Date(now);
-        date.setDate(date.getDate() - daysAgo);
-        return date.toISOString().split('T')[0];
-      }
-    }
-    
-    return undefined;
-  }
 
   private parseJobType(jobTypeText: string): JobType[] {
     if (!jobTypeText) return [];
-    
+
     const typeMapping: Record<string, JobType> = {
       'full-time': JobType.FULL_TIME,
       'part-time': JobType.PART_TIME,
@@ -301,22 +191,12 @@ export class ZipRecruiterScraper extends Scraper {
       'temporary': JobType.TEMPORARY,
       'internship': JobType.INTERNSHIP,
     };
-    
+
     const normalized = jobTypeText.toLowerCase().trim();
     const jobType = typeMapping[normalized];
-    
+
     return jobType ? [jobType] : [];
   }
 
-  private isJobRemote(locationText: string, description: string): boolean {
-    const remoteKeywords = ['remote', 'work from home', 'wfh', 'telecommute'];
-    
-    const textToCheck = `${locationText} ${description}`.toLowerCase();
-    return remoteKeywords.some(keyword => textToCheck.includes(keyword));
-  }
 
-  private extractJobId(url: string): string {
-    const match = url.match(/\/jobs\/([^\/\?]+)/);
-    return match ? match[1] : Math.random().toString(36).substr(2, 9);
-  }
 }

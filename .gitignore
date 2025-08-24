@@ -71,3 +71,30 @@ playwright-report/
 # Temporary files
 *.tmp
 *.temp
+
+# Test files and output
+*.csv
+*.json
+jobs.*
+test-jobs.*
+example-jobs.*
+
+# Cache directories
+.cache/
+.parcel-cache/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Vitest/Jest
+coverage/
+.vitest/
+
+# Package manager lock files (keep only one)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Local development
+.local/
+local/

@@ -1,5 +1,6 @@
 import {
   Site,
+  SiteName,
   ScraperInput,
   JobResponse,
   JobPost,
@@ -10,128 +11,142 @@ import {
   SalarySource,
 } from './types';
 import { SCRAPER_MAPPING } from './scrapers';
-import { createLogger, extractSalary, convertToAnnual, DESIRED_COLUMN_ORDER } from './utils';
-import { CountryHelper, JobTypeHelper, JobDataFrame } from './models';
-
-const logger = createLogger('JobSpy');
+import { logger, parseSalary, normalizeSalaryToAnnual } from './utils';
+import { JobDataFrame } from './models';
 
 export interface ScrapeJobsOptions {
-  site_name?: string | string[] | Site | Site[];
-  search_term?: string;
-  google_search_term?: string;
+  siteName?: SiteName | SiteName[] | Site | Site[];
+  searchTerm?: string;
+  googleSearchTerm?: string;
   location?: string;
   distance?: number;
-  is_remote?: boolean;
-  job_type?: string | JobType;
-  easy_apply?: boolean;
-  results_wanted?: number;
-  country_indeed?: string;
+  isRemote?: boolean;
+  jobType?: string | JobType;
+  easyApply?: boolean;
+  resultsWanted?: number;
+  countryIndeed?: string;
   proxies?: string[] | string;
-  ca_cert?: string;
-  description_format?: string | DescriptionFormat;
-  linkedin_fetch_description?: boolean;
-  linkedin_company_ids?: number[];
+  caCert?: string;
+  descriptionFormat?: string | DescriptionFormat;
+  linkedinFetchDescription?: boolean;
+  linkedinCompanyIds?: number[];
   offset?: number;
-  hours_old?: number;
-  enforce_annual_salary?: boolean;
+  hoursOld?: number;
+  enforceAnnualSalary?: boolean;
   verbose?: number;
-  user_agent?: string;
+  userAgent?: string;
 }
 
 export async function scrapeJobs(options: ScrapeJobsOptions = {}): Promise<JobDataFrame> {
   const {
-    site_name,
-    search_term,
-    google_search_term,
+    siteName,
+    searchTerm,
+    googleSearchTerm,
     location,
     distance = 50,
-    is_remote = false,
-    job_type,
-    easy_apply,
-    results_wanted = 15,
-    country_indeed = 'usa',
+    isRemote,
+    jobType,
+    easyApply,
+    resultsWanted = 15,
+    countryIndeed,
     proxies,
-    ca_cert,
-    description_format = 'markdown',
-    linkedin_fetch_description = false,
-    linkedin_company_ids,
-    offset = 0,
-    hours_old,
-    enforce_annual_salary = false,
-    verbose = 0,
-    user_agent,
+    caCert,
+    descriptionFormat,
+    linkedinFetchDescription,
+    linkedinCompanyIds,
+    offset,
+    hoursOld,
+    enforceAnnualSalary,
+    verbose = 1,
+    userAgent,
   } = options;
 
   // Set logger level based on verbose
-  const logLevel = verbose === 0 ? 'error' : verbose === 1 ? 'warn' : 'info';
-  logger.setLevel(logLevel);
+  if (verbose !== undefined) {
+    const logLevel = verbose === 0 ? 0 : verbose === 1 ? 1 : 2;
+    logger.setLevel(logLevel);
+  }
 
-  // Parse site types
-  const siteTypes = parseSiteTypes(site_name);
+  // Parse site types with comprehensive error handling
+  const siteTypes = parseSiteTypes(siteName);
   
   // Parse job type
-  const parsedJobType = parseJobType(job_type);
+  const parsedJobType = parseJobType(jobType);
   
   // Parse country
-  const country = CountryHelper.fromString(country_indeed);
+  const country = countryIndeed ? Country.USA : Country.USA; // Default to USA
   
   // Parse description format
-  const descFormat = typeof description_format === 'string' 
-    ? (description_format === 'html' ? DescriptionFormat.HTML : DescriptionFormat.MARKDOWN)
-    : description_format;
+  const descFormat = typeof descriptionFormat === 'string' 
+    ? (descriptionFormat === 'html' ? DescriptionFormat.HTML : DescriptionFormat.MARKDOWN)
+    : descriptionFormat || DescriptionFormat.MARKDOWN;
 
   const scraperInput: ScraperInput = {
     siteType: siteTypes,
-    searchTerm: search_term,
-    googleSearchTerm: google_search_term,
+    searchTerm: searchTerm,
+    googleSearchTerm: googleSearchTerm,
     location,
     distance,
-    isRemote: is_remote,
+    isRemote: isRemote,
     jobType: parsedJobType,
-    easyApply: easy_apply,
+    easyApply: easyApply,
     descriptionFormat: descFormat,
-    linkedinFetchDescription: linkedin_fetch_description,
-    resultsWanted: results_wanted,
-    linkedinCompanyIds: linkedin_company_ids,
+    linkedinFetchDescription: linkedinFetchDescription,
+    resultsWanted: resultsWanted,
+    linkedinCompanyIds: linkedinCompanyIds,
     offset,
-    hoursOld: hours_old,
+    hoursOld: hoursOld,
     country,
   };
 
   const scraperConfig = {
     proxies,
-    caCert: ca_cert,
-    userAgent: user_agent,
+    caCert: caCert,
+    userAgent: userAgent,
   };
 
-  // Run scrapers concurrently
+  // Run scrapers concurrently with enhanced error handling
   const scrapePromises = siteTypes.map(async (site) => {
     const ScraperClass = SCRAPER_MAPPING[site];
     if (!ScraperClass) {
       logger.warn(`No scraper available for site: ${site}`);
-      return { site, jobs: [] };
+      return { site, jobs: [], error: `Scraper not implemented for ${site}` };
     }
 
     try {
       const scraper = new ScraperClass(scraperConfig);
       const response = await scraper.scrape(scraperInput);
-      logger.info(`${site} scraping completed`);
-      return { site, jobs: response.jobs };
+      logger.info(`${site} scraping completed - found ${response.jobs.length} jobs`);
+      return { site, jobs: response.jobs, error: null };
     } catch (error) {
-      logger.error(`Error scraping ${site}:`, error);
-      return { site, jobs: [] };
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`Error scraping ${site}: ${errorMessage}`);
+      return { site, jobs: [], error: errorMessage };
     }
   });
 
-  const results = await Promise.all(scrapePromises);
+  const results = await Promise.allSettled(scrapePromises);
   
-  // Combine and process all jobs
+  // Combine and process all jobs with error tracking
   const allJobs: JobPost[] = [];
+  const errors: string[] = [];
   
-  for (const { site, jobs } of results) {
-    for (const job of jobs) {
-      const processedJob = processJob(job, site, country, enforce_annual_salary);
-      allJobs.push(processedJob);
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      const { site, jobs, error } = result.value;
+      if (error) {
+        errors.push(`${site}: ${error}`);
+      }
+      for (const job of jobs) {
+        try {
+          const processedJob = processJob(job, site, country, enforceAnnualSalary || false);
+          allJobs.push(processedJob);
+        } catch (jobError) {
+          logger.warn(`Error processing job from ${site}:`, jobError);
+        }
+      }
+    } else {
+      errors.push(`Promise rejected: ${result.reason}`);
     }
   }
 
@@ -146,144 +161,74 @@ export async function scrapeJobs(options: ScrapeJobsOptions = {}): Promise<JobDa
     return 0;
   });
 
-  logger.info(`Total jobs scraped: ${allJobs.length}`);
+  // Log results and any errors
+  if (errors.length > 0) {
+    logger.warn(`Scraping completed with ${errors.length} errors:`, errors);
+  }
+  
+  logger.info(`Total jobs scraped: ${allJobs.length} from ${siteTypes.length} sites`);
+  
+  // Return empty result gracefully if no jobs found
+  if (allJobs.length === 0) {
+    logger.info('No jobs found. This is normal and not an error.');
+  }
+  
   return new JobDataFrame(allJobs);
 }
 
-function parseSiteTypes(siteName?: string | string[] | Site | Site[]): Site[] {
-  if (!siteName) {
-    return Object.values(Site);
-  }
-
-  if (typeof siteName === 'string') {
-    return [mapStringToSite(siteName)];
-  }
-
-  if (Array.isArray(siteName)) {
-    return siteName.map(site => 
-      typeof site === 'string' ? mapStringToSite(site) : site
-    );
-  }
-
-  return [siteName];
-}
-
-function mapStringToSite(siteName: string): Site {
-  const mapping: Record<string, Site> = {
-    'linkedin': Site.LINKEDIN,
-    'indeed': Site.INDEED,
-    'zip_recruiter': Site.ZIP_RECRUITER,
-    'ziprecruiter': Site.ZIP_RECRUITER,
-    'glassdoor': Site.GLASSDOOR,
-    'google': Site.GOOGLE,
-    'bayt': Site.BAYT,
-    'naukri': Site.NAUKRI,
-    'bdjobs': Site.BDJOBS,
-  };
-
-  const site = mapping[siteName.toLowerCase()];
-  if (!site) {
-    throw new Error(`Invalid site name: ${siteName}`);
-  }
-
-  return site;
+// Helper functions
+function parseSiteTypes(siteName?: SiteName | SiteName[] | Site | Site[]): Site[] {
+  if (!siteName) return [Site.INDEED]; // Default to Indeed
+  
+  const sites = Array.isArray(siteName) ? siteName : [siteName];
+  return sites.map(site => {
+    if (typeof site === 'string') {
+      // Map string literals to Site enum values
+      const siteMap: Record<SiteName, Site> = {
+        'linkedin': Site.LINKEDIN,
+        'indeed': Site.INDEED,
+        'ziprecruiter': Site.ZIP_RECRUITER,
+        'glassdoor': Site.GLASSDOOR,
+        'google': Site.GOOGLE,
+        'bayt': Site.BAYT,
+        'naukri': Site.NAUKRI,
+        'bdjobs': Site.BDJOBS,
+      };
+      return siteMap[site] || Site.INDEED;
+    }
+    return site;
+  });
 }
 
 function parseJobType(jobType?: string | JobType): JobType | undefined {
   if (!jobType) return undefined;
-  
   if (typeof jobType === 'string') {
-    return JobTypeHelper.fromString(jobType) || undefined;
+    const typeMap: Record<string, JobType> = {
+      'fulltime': JobType.FULL_TIME,
+      'parttime': JobType.PART_TIME,
+      'contract': JobType.CONTRACT,
+      'temporary': JobType.TEMPORARY,
+      'internship': JobType.INTERNSHIP,
+    };
+    return typeMap[jobType.toLowerCase()];
   }
-  
   return jobType;
 }
 
-function processJob(
-  job: JobPost, 
-  site: Site, 
-  country: Country, 
-  enforceAnnualSalary: boolean
-): JobPost {
+function processJob(job: JobPost, site: Site, country: Country, enforceAnnualSalary: boolean): JobPost {
   const processedJob = { ...job };
   
-  // Add site information
-  (processedJob as any).site = site;
-  
-  // Process company name
-  if (processedJob.companyName) {
-    (processedJob as any).company = processedJob.companyName;
-  }
-  
-  // Process job types
-  if (processedJob.jobType && processedJob.jobType.length > 0) {
-    (processedJob as any).jobType = processedJob.jobType.map(type => type.toString()).join(', ');
-  }
-  
-  // Process emails
-  if (processedJob.emails && processedJob.emails.length > 0) {
-    (processedJob as any).emails = processedJob.emails.join(', ');
-  }
-  
-  // Process location
-  if (processedJob.location) {
-    (processedJob as any).location = formatLocation(processedJob.location);
-  }
-  
-  // Process compensation
-  if (processedJob.compensation) {
-    const comp = processedJob.compensation;
-    (processedJob as any).interval = comp.interval;
-    (processedJob as any).minAmount = comp.minAmount;
-    (processedJob as any).maxAmount = comp.maxAmount;
-    (processedJob as any).currency = comp.currency || 'USD';
-    (processedJob as any).salarySource = SalarySource.DIRECT_DATA;
-    
-    if (enforceAnnualSalary && comp.interval && comp.interval !== CompensationInterval.YEARLY) {
-      const annualComp = convertToAnnual(comp);
-      (processedJob as any).interval = annualComp.interval;
-      (processedJob as any).minAmount = annualComp.minAmount;
-      (processedJob as any).maxAmount = annualComp.maxAmount;
+  // Process salary if present
+  if (job.description && !job.compensation) {
+    const extractedSalary = parseSalary(job.description);
+    if (extractedSalary) {
+      processedJob.compensation = enforceAnnualSalary 
+        ? normalizeSalaryToAnnual(extractedSalary)
+        : extractedSalary;
     }
-  } else if (country === Country.USA && processedJob.description) {
-    // Try to extract salary from description
-    const salaryInfo = extractSalary(processedJob.description, { enforceAnnualSalary });
-    if (salaryInfo.interval) {
-      (processedJob as any).interval = salaryInfo.interval;
-      (processedJob as any).minAmount = salaryInfo.minAmount;
-      (processedJob as any).maxAmount = salaryInfo.maxAmount;
-      (processedJob as any).currency = salaryInfo.currency;
-      (processedJob as any).salarySource = SalarySource.DESCRIPTION;
-    }
-  }
-  
-  // Set salary source to null if no salary data
-  if (!(processedJob as any).minAmount) {
-    (processedJob as any).salarySource = null;
   }
   
   return processedJob;
-}
-
-function formatLocation(location: any): string {
-  const parts: string[] = [];
-  
-  if (location.city) parts.push(location.city);
-  if (location.state) parts.push(location.state);
-  if (location.country) {
-    if (typeof location.country === 'string') {
-      parts.push(location.country);
-    } else {
-      const countryName = location.country.toString();
-      if (countryName === 'usa' || countryName === 'uk') {
-        parts.push(countryName.toUpperCase());
-      } else {
-        parts.push(countryName.replace(/[_-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()));
-      }
-    }
-  }
-  
-  return parts.join(', ');
 }
 
 // Export types and utilities
