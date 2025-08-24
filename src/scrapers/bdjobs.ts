@@ -1,18 +1,18 @@
 import axios, { AxiosInstance } from 'axios';
+import * as cheerio from 'cheerio';
 import { Scraper } from '../models';
-import { 
-  ScraperInput, 
-  JobResponse, 
-  JobPost, 
-  Site, 
-  DescriptionFormat,
-  Location,
+import {
   Compensation,
   CompensationInterval,
-  JobType
+  DescriptionFormat,
+  JobPost,
+  JobResponse,
+  JobType,
+  Location,
+  ScraperInput,
+  Site
 } from '../types';
 import { createLogger, extractEmailsFromText, markdownConverter } from '../utils';
-import * as cheerio from 'cheerio';
 
 const logger = createLogger('BDJobs');
 
@@ -38,9 +38,9 @@ export class BDJobsScraper extends Scraper {
   private baseUrl = 'https://www.bdjobs.com';
   private seenUrls: Set<string> = new Set();
 
-  constructor(config: any = {}) {
+  constructor (config: any = {}) {
     super(Site.BDJOBS, config);
-    
+
     this.session = axios.create({
       timeout: 15000,
       headers: {
@@ -75,11 +75,11 @@ export class BDJobsScraper extends Scraper {
 
       for (let page = 1; page <= maxPages; page++) {
         logger.info(`Scraping BDJobs page ${page}/${maxPages}`);
-        
+
         try {
           const pageJobs = await this.fetchJobsPage(input, page);
           jobs.push(...pageJobs);
-          
+
           if (!pageJobs.length || jobs.length >= maxResults) {
             break;
           }
@@ -105,10 +105,10 @@ export class BDJobsScraper extends Scraper {
     try {
       const url = `https://jobs.bdjobs.com/jobsearch.asp?${searchParams.toString()}`;
       const response = await this.session.get(url);
-      
+
       // Parse HTML to extract job data
       const jobData = this.parseJobsHTML(response.data);
-      
+
       const jobs: JobPost[] = [];
       for (const data of jobData) {
         const job = await this.processJob(data, input);
@@ -116,7 +116,7 @@ export class BDJobsScraper extends Scraper {
           jobs.push(job);
         }
       }
-      
+
       return jobs;
     } catch (error) {
       logger.error('Failed to fetch BDJobs page:', error);
@@ -159,7 +159,7 @@ export class BDJobsScraper extends Scraper {
 
   private async processJob(jobData: BDJobsData, input: ScraperInput): Promise<JobPost | null> {
     const jobUrl = jobData.jobUrl;
-    
+
     if (this.seenUrls.has(jobUrl)) {
       return null;
     }
@@ -168,20 +168,20 @@ export class BDJobsScraper extends Scraper {
     // Fetch detailed job information
     let detailedJob = jobData;
     try {
-      detailedJob = await this.fetchJobDetails(jobData.jobId, input);
+      detailedJob = await this.fetchJobDetails(jobData.jobId);
     } catch (error) {
       logger.warn(`Failed to fetch details for job ${jobData.jobId}:`, error);
     }
 
     const location = this.parseLocation(detailedJob.location);
     const compensation = this.parseCompensation(detailedJob.salary);
-    
+
     let description = detailedJob.jobDescription;
     if (input.descriptionFormat === DescriptionFormat.MARKDOWN && description) {
       description = markdownConverter(description);
     }
 
-    const datePosted = detailedJob.postedDate ? 
+    const datePosted = detailedJob.postedDate ?
       new Date(detailedJob.postedDate).toISOString().split('T')[0] : undefined;
 
     return {
@@ -202,11 +202,11 @@ export class BDJobsScraper extends Scraper {
     };
   }
 
-  private async fetchJobDetails(jobId: string, input: ScraperInput): Promise<BDJobsData> {
+  private async fetchJobDetails(jobId: string): Promise<BDJobsData> {
     try {
       const url = `${this.baseUrl}/jobs/${jobId}`;
       const response = await this.session.get(url);
-      
+
       // Parse detailed job page
       return this.parseJobDetailsHTML(response.data, jobId);
     } catch (error) {
@@ -254,11 +254,11 @@ export class BDJobsScraper extends Scraper {
   private parseLocation(locationStr: string): Location {
     const parts = locationStr.split(',').map(part => part.trim());
     const location: Location = {};
-    
+
     if (parts.length >= 1) location.city = parts[0];
     if (parts.length >= 2) location.state = parts[1];
     location.country = 'Bangladesh'; // Default for BDJobs
-    
+
     return location;
   }
 
@@ -269,7 +269,7 @@ export class BDJobsScraper extends Scraper {
 
     // Parse salary string like "25,000-35,000 BDT" or "Tk. 30,000 - 50,000"
     const salaryMatch = salaryStr.match(/(?:tk\.?\s*)?(\d+(?:,\d+)*)\s*-\s*(\d+(?:,\d+)*)\s*(?:bdt|taka)?/i);
-    
+
     if (!salaryMatch) return undefined;
 
     const minAmount = parseFloat(salaryMatch[1].replace(/,/g, ''));
@@ -291,7 +291,7 @@ export class BDJobsScraper extends Scraper {
       [JobType.TEMPORARY]: 'temporary',
       [JobType.INTERNSHIP]: 'internship',
     };
-    
+
     return mapping[jobType] || 'full-time';
   }
 
@@ -303,14 +303,14 @@ export class BDJobsScraper extends Scraper {
       'temporary': JobType.TEMPORARY,
       'internship': JobType.INTERNSHIP,
     };
-    
+
     return mapping[jobType.toLowerCase()] || JobType.FULL_TIME;
   }
 
   private isRemoteJob(location: string, description?: string): boolean {
     const remoteKeywords = ['remote', 'work from home', 'wfh', 'home based'];
     const text = (location + ' ' + (description || '')).toLowerCase();
-    
+
     return remoteKeywords.some(keyword => text.includes(keyword));
   }
 

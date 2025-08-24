@@ -21,7 +21,7 @@ This TypeScript version maintains full API compatibility while providing type sa
 
 ## Features
 
-- 🔍 Scrapes job postings from **Indeed**, **LinkedIn**, **ZipRecruiter**, **Glassdoor**, **Google**, **Naukri**, **Bayt**, **BDJobs** concurrently
+- 🔍 Scrapes job postings from **Indeed** and **LinkedIn** (other sites currently under maintenance)
 - 📊 Aggregates job postings in a structured format with pandas-like DataFrame functionality
 - 🌐 Proxy support with rotation to bypass blocking
 - 🔒 Fully type-safe with comprehensive TypeScript definitions
@@ -51,7 +51,7 @@ const jobs = await scrapeJobs({
   resultsWanted: 20,
   hoursOld: 72,
   countryIndeed: 'USA',
-  
+
   // linkedinFetchDescription: true, // gets more info such as description, direct job url (slower)
   // proxies: ['208.195.175.46:65095', '208.195.175.45:65095', 'localhost'],
 });
@@ -104,7 +104,7 @@ interface ScrapeJobsOptions {
 #### Job Types
 
 - `fulltime` / `full-time`
-- `parttime` / `part-time` 
+- `parttime` / `part-time`
 - `contract`
 - `temporary`
 - `internship`
@@ -112,7 +112,7 @@ interface ScrapeJobsOptions {
 #### Supported Sites
 
 - **LinkedIn**: Global search using `location` parameter
-- **Indeed**: Supports most countries with `countryIndeed` parameter  
+- **Indeed**: Supports most countries with `countryIndeed` parameter
 - **ZipRecruiter**: US/Canada only, uses `location` parameter
 - **Glassdoor**: Supports major countries (requires `countryIndeed`)
 - **Google**: Global job search with advanced filtering
@@ -151,7 +151,7 @@ interface JobPost {
   datePosted?: string;            // Posting date
   emails?: string[];              // Contact emails
   isRemote?: boolean;             // Remote work flag
-  
+
   // Site-specific fields
   jobLevel?: string;              // LinkedIn: experience level
   companyIndustry?: string;       // LinkedIn/Indeed: industry

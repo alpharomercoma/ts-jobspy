@@ -135,9 +135,8 @@ export class MemoryMonitor {
 
   static logUsage(label: string = 'Memory'): void {
     const usage = this.getUsage();
-    const mb = (bytes: number) => Math.round(bytes / 1024 / 1024 * 100) / 100;
 
-    logger.debug(`${label} - RSS: ${mb(usage.rss)}MB, Heap: ${mb(usage.heapUsed)}/${mb(usage.heapTotal)}MB, External: ${mb(usage.external)}MB`);
+    logger.debug(`${label} - RSS: ${this.formatMemoryUsage(usage.rss)}, Heap: ${this.formatMemoryUsage(usage.heapUsed)}/${this.formatMemoryUsage(usage.heapTotal)}, External: ${this.formatMemoryUsage(usage.external)}`);
   }
 
   static checkMemoryLeak(threshold: number = 500): boolean {
@@ -151,9 +150,22 @@ export class MemoryMonitor {
 
     return false;
   }
+
+  static formatMemoryUsage(bytes: number): string {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = bytes;
+    let unitIndex = 0;
+
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+
+    return `${size.toFixed(2)} ${units[unitIndex]}`;
+  }
 }
 
-export function withPerformanceMonitoring<T extends any[], R>(
+export function withPerformanceMonitoring<T extends unknown[], R>(
   fn: (...args: T) => Promise<R>,
   label: string
 ) {
@@ -174,7 +186,7 @@ export function withPerformanceMonitoring<T extends any[], R>(
   };
 }
 
-export function withRateLimit<T extends any[], R>(
+export function withRateLimit<T extends unknown[], R>(
   fn: (...args: T) => Promise<R>,
   rateLimiter: RateLimiter
 ) {
@@ -184,7 +196,7 @@ export function withRateLimit<T extends any[], R>(
   };
 }
 
-export function withCircuitBreaker<T extends any[], R>(
+export function withCircuitBreaker<T extends unknown[], R>(
   fn: (...args: T) => Promise<R>,
   circuitBreaker: CircuitBreaker
 ) {

@@ -1,18 +1,15 @@
+import { JobDataFrame } from './models';
+import { SCRAPER_MAPPING } from './scrapers';
 import {
-  Site,
-  SiteName,
-  ScraperInput,
-  JobResponse,
+  Country,
+  DescriptionFormat,
   JobPost,
   JobType,
-  Country,
-  CompensationInterval,
-  DescriptionFormat,
-  SalarySource,
+  ScraperInput,
+  Site,
+  SiteName,
 } from './types';
-import { SCRAPER_MAPPING } from './scrapers';
-import { logger, parseSalary, normalizeSalaryToAnnual } from './utils';
-import { JobDataFrame } from './models';
+import { logger, normalizeSalaryToAnnual, parseSalary } from './utils';
 
 export interface ScrapeJobsOptions {
   siteName?: SiteName | SiteName[] | Site | Site[];
@@ -69,15 +66,15 @@ export async function scrapeJobs(options: ScrapeJobsOptions = {}): Promise<JobDa
 
   // Parse site types with comprehensive error handling
   const siteTypes = parseSiteTypes(siteName);
-  
+
   // Parse job type
   const parsedJobType = parseJobType(jobType);
-  
+
   // Parse country
   const country = countryIndeed ? Country.USA : Country.USA; // Default to USA
-  
+
   // Parse description format
-  const descFormat = typeof descriptionFormat === 'string' 
+  const descFormat = typeof descriptionFormat === 'string'
     ? (descriptionFormat === 'html' ? DescriptionFormat.HTML : DescriptionFormat.MARKDOWN)
     : descriptionFormat || DescriptionFormat.MARKDOWN;
 
@@ -126,11 +123,11 @@ export async function scrapeJobs(options: ScrapeJobsOptions = {}): Promise<JobDa
   });
 
   const results = await Promise.allSettled(scrapePromises);
-  
+
   // Combine and process all jobs with error tracking
   const allJobs: JobPost[] = [];
   const errors: string[] = [];
-  
+
   for (const result of results) {
     if (result.status === 'fulfilled') {
       const { site, jobs, error } = result.value;
@@ -165,21 +162,21 @@ export async function scrapeJobs(options: ScrapeJobsOptions = {}): Promise<JobDa
   if (errors.length > 0) {
     logger.warn(`Scraping completed with ${errors.length} errors:`, errors);
   }
-  
+
   logger.info(`Total jobs scraped: ${allJobs.length} from ${siteTypes.length} sites`);
-  
+
   // Return empty result gracefully if no jobs found
   if (allJobs.length === 0) {
     logger.info('No jobs found. This is normal and not an error.');
   }
-  
+
   return new JobDataFrame(allJobs);
 }
 
 // Helper functions
 function parseSiteTypes(siteName?: SiteName | SiteName[] | Site | Site[]): Site[] {
   if (!siteName) return [Site.INDEED]; // Default to Indeed
-  
+
   const sites = Array.isArray(siteName) ? siteName : [siteName];
   return sites.map(site => {
     if (typeof site === 'string') {
@@ -217,25 +214,25 @@ function parseJobType(jobType?: string | JobType): JobType | undefined {
 
 function processJob(job: JobPost, site: Site, country: Country, enforceAnnualSalary: boolean): JobPost {
   const processedJob = { ...job };
-  
+
   // Process salary if present
   if (job.description && !job.compensation) {
     const extractedSalary = parseSalary(job.description);
     if (extractedSalary) {
-      processedJob.compensation = enforceAnnualSalary 
+      processedJob.compensation = enforceAnnualSalary
         ? normalizeSalaryToAnnual(extractedSalary)
         : extractedSalary;
     }
   }
-  
+
   return processedJob;
 }
 
 // Export types and utilities
-export * from './types';
 export * from './models';
-export * from './utils';
 export { SCRAPER_MAPPING } from './scrapers';
+export * from './types';
+export * from './utils';
 
 // Default export
 export default scrapeJobs;

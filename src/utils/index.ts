@@ -1,12 +1,12 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
-import { CompensationInterval, Compensation, JobType } from '../types';
+import { Compensation, CompensationInterval, JobType } from '../types';
 
-export * from './logger';
-export * from './salary';
 export * from './email';
+export * from './logger';
 export * from './markdown';
+export * from './salary';
 
 // Export htmlToMarkdown as markdownConverter for backward compatibility
 export { htmlToMarkdown as markdownConverter } from './markdown';
@@ -15,7 +15,7 @@ export class Logger {
   private name: string;
   private level: 'error' | 'warn' | 'info' | 'debug';
 
-  constructor(name: string, level: 'error' | 'warn' | 'info' | 'debug' = 'info') {
+  constructor (name: string, level: 'error' | 'warn' | 'info' | 'debug' = 'info') {
     this.name = name;
     this.level = level;
   }
@@ -25,25 +25,25 @@ export class Logger {
     return levels.indexOf(level) <= levels.indexOf(this.level);
   }
 
-  error(message: string, ...args: any[]): void {
+  error(message: string, ...args: unknown[]): void {
     if (this.shouldLog('error')) {
       console.error(`[${new Date().toISOString()}] ERROR [${this.name}]: ${message}`, ...args);
     }
   }
 
-  warn(message: string, ...args: any[]): void {
+  warn(message: string, ...args: unknown[]): void {
     if (this.shouldLog('warn')) {
       console.warn(`[${new Date().toISOString()}] WARN [${this.name}]: ${message}`, ...args);
     }
   }
 
-  info(message: string, ...args: any[]): void {
+  info(message: string, ...args: unknown[]): void {
     if (this.shouldLog('info')) {
       console.info(`[${new Date().toISOString()}] INFO [${this.name}]: ${message}`, ...args);
     }
   }
 
-  debug(message: string, ...args: any[]): void {
+  debug(message: string, ...args: unknown[]): void {
     if (this.shouldLog('debug')) {
       console.debug(`[${new Date().toISOString()}] DEBUG [${this.name}]: ${message}`, ...args);
     }
@@ -62,21 +62,21 @@ export class ProxyRotator {
   private proxies: string[];
   private currentIndex: number = 0;
 
-  constructor(proxies: string[] | string) {
+  constructor (proxies: string[] | string) {
     this.proxies = Array.isArray(proxies) ? proxies : [proxies];
   }
 
   getNext(): string | undefined {
     if (this.proxies.length === 0) return undefined;
-    
+
     const proxy = this.proxies[this.currentIndex];
     this.currentIndex = (this.currentIndex + 1) % this.proxies.length;
     return proxy;
   }
 
-  formatProxy(proxy: string): { httpAgent?: any; httpsAgent?: any } {
+  formatProxy(proxy: string): { httpAgent?: HttpsProxyAgent<string> | SocksProxyAgent; httpsAgent?: HttpsProxyAgent<string> | SocksProxyAgent; } {
     if (proxy === 'localhost') return {};
-    
+
     if (proxy.startsWith('socks5://') || proxy.startsWith('socks4://')) {
       const agent = new SocksProxyAgent(proxy);
       return { httpAgent: agent, httpsAgent: agent };
@@ -93,15 +93,15 @@ export class SessionManager {
   private proxyRotator?: ProxyRotator;
   private userAgent: string;
 
-  constructor(config?: {
+  constructor (config?: {
     proxies?: string[] | string;
     userAgent?: string;
     timeout?: number;
     caCert?: string;
   }) {
-    this.userAgent = config?.userAgent || 
+    this.userAgent = config?.userAgent ||
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    
+
     if (config?.proxies) {
       this.proxyRotator = new ProxyRotator(config.proxies);
     }
@@ -131,11 +131,11 @@ export class SessionManager {
     });
   }
 
-  async get(url: string, config?: AxiosRequestConfig) {
+  async get(url: string, config?: AxiosRequestConfig): Promise<any> {
     return this.axiosInstance.get(url, config);
   }
 
-  async post(url: string, data?: any, config?: AxiosRequestConfig) {
+  async post(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<any> {
     return this.axiosInstance.post(url, data, config);
   }
 
@@ -145,11 +145,11 @@ export class SessionManager {
 }
 
 export class MarkdownConverter {
-  constructor() {}
+  constructor () { }
 
   convert(html: string): string {
     if (!html) return '';
-    
+
     // Simple HTML to text conversion without external dependencies
     return html
       .replace(/<br\s*\/?>/gi, '\n')
@@ -172,10 +172,10 @@ export class MarkdownConverter {
 
 export function extractEmailsFromText(text: string): string[] | null {
   if (!text) return null;
-  
+
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
   const emails = text.match(emailRegex);
-  
+
   return emails ? [...new Set(emails)] : null;
 }
 
@@ -222,14 +222,14 @@ export function extractSalary(
   }
 
   const minMaxPattern = /\$(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)\s*[-—–]\s*(?:\$)?(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)/;
-  
+
   const toInt = (s: string): number => parseInt(s.replace(/,/g, ''), 10);
-  
+
   const convertHourlyToAnnual = (hourlyWage: number): number => hourlyWage * 2080;
   const convertMonthlyToAnnual = (monthlyWage: number): number => monthlyWage * 12;
 
   const match = salaryStr.match(minMaxPattern);
-  
+
   if (!match) {
     return { interval: null, minAmount: null, maxAmount: null, currency: null };
   }

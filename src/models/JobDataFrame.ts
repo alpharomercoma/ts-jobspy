@@ -1,6 +1,5 @@
-import { JobPost } from '../types';
 import * as fs from 'fs';
-import * as path from 'path';
+import { JobPost } from '../types';
 
 export interface CsvOptions {
   quoting?: 'minimal' | 'all' | 'nonnumeric' | 'none';
@@ -39,7 +38,8 @@ export class JobDataFrame {
     const groups: Record<string, JobPost[]> = {};
 
     for (const job of this.jobs) {
-      const key = String(job[field] || 'undefined');
+      const value = job[field];
+      const key = value === undefined || value === null ? 'undefined' : String(value);
       if (!groups[key]) {
         groups[key] = [];
       }
@@ -140,7 +140,7 @@ export class JobDataFrame {
     return new JobDataFrame(sorted);
   }
 
-  unique(field: keyof JobPost): any[] {
+  unique(field: keyof JobPost): unknown[] {
     const values = this.jobs.map(job => job[field]).filter(val => val !== undefined);
     return [...new Set(values)];
   }
@@ -154,7 +154,7 @@ export class JobDataFrame {
     return this.jobs[Symbol.iterator]();
   }
 
-  private formatValue(value: any): string {
+  private formatValue(value: unknown): string {
     if (value === null || value === undefined) {
       return '';
     }
@@ -175,7 +175,7 @@ export class JobDataFrame {
 
     const needsQuoting = value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r');
 
-    let escaped = value.replace(/"/g, '""');
+    const escaped = value.replace(/"/g, '""');
 
     switch (quoting) {
       case 'all':

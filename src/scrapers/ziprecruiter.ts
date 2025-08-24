@@ -1,17 +1,13 @@
-import * as cheerio from 'cheerio';
 import { Scraper } from '../models';
 import {
-  Compensation,
   CompensationInterval,
-  DescriptionFormat,
   JobPost,
   JobResponse,
   JobType,
-  Location,
   ScraperInput,
   Site,
 } from '../types';
-import { MarkdownConverter, SessionManager, createLogger, extractEmailsFromText } from '../utils';
+import { MarkdownConverter, SessionManager, createLogger } from '../utils';
 
 const logger = createLogger('ZipRecruiter');
 
@@ -20,7 +16,7 @@ export class ZipRecruiterScraper extends Scraper {
   private seenUrls: Set<string> = new Set();
   private markdownConverter: MarkdownConverter;
 
-  constructor(config?: { proxies?: string[] | string; caCert?: string; userAgent?: string }) {
+  constructor (config?: { proxies?: string[] | string; caCert?: string; userAgent?: string; }) {
     super(Site.ZIP_RECRUITER, config);
     this.session = new SessionManager({
       proxies: this.proxies,
@@ -78,7 +74,7 @@ export class ZipRecruiterScraper extends Scraper {
       }
 
       const jobData = response.data;
-      return this.parseJobsFromJson(jobData, input);
+      return this.parseJobsFromJson(jobData);
     } catch (error) {
       logger.error('Error making ZipRecruiter API request:', error);
       return [];
@@ -140,7 +136,7 @@ export class ZipRecruiterScraper extends Scraper {
     return `${baseUrl}?${params.toString()}`;
   }
 
-  private parseJobsFromJson(jobData: any, input: ScraperInput): JobPost[] {
+  private parseJobsFromJson(jobData: any): JobPost[] {
     const jobs: JobPost[] = [];
     const jobPosts = jobData.jobs || [];
 
@@ -150,6 +146,22 @@ export class ZipRecruiterScraper extends Scraper {
         continue;
       }
       this.seenUrls.add(jobUrl);
+
+      // Parse compensation interval
+      let interval = job.compensation_interval;
+      if (interval === 'annual') {
+        interval = CompensationInterval.YEARLY;
+      } else if (interval === 'hourly') {
+        interval = CompensationInterval.HOURLY;
+      } else if (interval === 'monthly') {
+        interval = CompensationInterval.MONTHLY;
+      } else if (interval === 'weekly') {
+        interval = CompensationInterval.WEEKLY;
+      } else if (interval === 'daily') {
+        interval = CompensationInterval.DAILY;
+      }
+
+      const description = job.job_description || '';
 
       const jobPost: JobPost = {
         id: `zr-${job.listing_key}`,
@@ -161,15 +173,16 @@ export class ZipRecruiterScraper extends Scraper {
           country: job.job_country === 'US' ? 'USA' : 'canada',
         },
         jobUrl,
-        description: job.job_description,
+        description: description,
         jobType: this.parseJobType(job.employment_type),
         datePosted: new Date(job.posted_time).toISOString().split('T')[0],
-        compensation: {
-            minAmount: job.compensation_min,
-            maxAmount: job.compensation_max,
-            currency: job.compensation_currency,
-            interval: job.compensation_interval === 'annual' ? CompensationInterval.YEARLY : job.compensation_interval,
-        }
+        compensation: job.compensation_min || job.compensation_max ? {
+          minAmount: job.compensation_min ? parseInt(job.compensation_min) : undefined,
+          maxAmount: job.compensation_max ? parseInt(job.compensation_max) : undefined,
+          currency: job.compensation_currency || 'USD',
+          interval: interval,
+        } : undefined,
+        listingType: job.buyer_type,
       };
       jobs.push(jobPost);
     }

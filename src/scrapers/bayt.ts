@@ -1,18 +1,19 @@
 import axios, { AxiosInstance } from 'axios';
+import * as cheerio from 'cheerio';
 import { Scraper } from '../models';
-import { 
-  ScraperInput, 
-  JobResponse, 
-  JobPost, 
-  Site, 
-  DescriptionFormat,
-  Location,
+import {
   Compensation,
   CompensationInterval,
-  JobType
+  DescriptionFormat,
+  JobPost,
+  JobResponse,
+  JobType,
+  Location,
+  ScraperConfig,
+  ScraperInput,
+  Site
 } from '../types';
 import { createLogger, extractEmailsFromText, markdownConverter } from '../utils';
-import * as cheerio from 'cheerio';
 
 const logger = createLogger('Bayt');
 
@@ -39,6 +40,7 @@ interface BaytJobData {
   experience_level?: string;
   skills?: string[];
   url: string;
+  descriptionFormat?: DescriptionFormat;
 }
 
 export class BaytScraper extends Scraper {
@@ -46,9 +48,9 @@ export class BaytScraper extends Scraper {
   private baseUrl = 'https://www.bayt.com';
   private seenUrls: Set<string> = new Set();
 
-  constructor(config: any = {}) {
+  constructor (config: ScraperConfig = {}) {
     super(Site.BAYT, config);
-    
+
     this.session = axios.create({
       timeout: 15000,
       headers: {
@@ -83,11 +85,11 @@ export class BaytScraper extends Scraper {
 
       for (let page = 1; page <= maxPages; page++) {
         logger.info(`Scraping Bayt page ${page}/${maxPages}`);
-        
+
         try {
           const pageJobs = await this.fetchJobsPage(input, page);
           jobs.push(...pageJobs);
-          
+
           if (!pageJobs.length || jobs.length >= maxResults) {
             break;
           }
@@ -124,18 +126,18 @@ export class BaytScraper extends Scraper {
     try {
       const url = `${this.baseUrl}/en/jobs/?${searchParams.toString()}`;
       const response = await this.session.get(url);
-      
+
       // Parse HTML to extract job data
       const jobData = this.parseJobsHTML(response.data);
-      
+
       const jobs: JobPost[] = [];
       for (const data of jobData) {
-        const job = await this.processJob(data, input);
+        const job = await this.processJob(data);
         if (job) {
           jobs.push(job);
         }
       }
-      
+
       return jobs;
     } catch (error) {
       logger.error('Failed to fetch Bayt jobs page:', error);
@@ -158,7 +160,7 @@ export class BaytScraper extends Scraper {
 
       const companyName = jobElement.find('div.p10l.t-nowrap span').text().trim();
       const location = jobElement.find('div.t-mute.t-small').text().trim();
-      
+
       jobs.push({
         id: jobId,
         title,
@@ -173,9 +175,62 @@ export class BaytScraper extends Scraper {
     return jobs;
   }
 
-  private async processJob(jobData: BaytJobData, input: ScraperInput): Promise<JobPost | null> {
+  private parseJobsFromJson(jobData: unknown[]): JobPost[] {
+    const jobs: JobPost[] = [];
+
+    for (const data of jobData) {
+      const job = this.processJobFromJson(data);
+      if (job) {
+        jobs.push(job);
+      }
+    }
+
+    return jobs;
+  }
+
+  private processJobFromJson(data: unknown): JobPost | null {
+    const jobData = data as BaytJobData;
     const jobUrl = jobData.url;
-    
+
+    if (this.seenUrls.has(jobUrl)) {
+      return null;
+    }
+
+    const location: Location = {
+      city: jobData.location.city,
+      country: jobData.location.country,
+    };
+
+    const compensation = jobData.salary ? this.parseCompensation(jobData.salary) : undefined;
+
+    let description = jobData.description;
+    if (jobData.descriptionFormat === DescriptionFormat.MARKDOWN && description) {
+      description = markdownConverter(description);
+    }
+
+    const datePosted = jobData.posted_date ?
+      new Date(jobData.posted_date).toISOString().split('T')[0] : undefined;
+
+    return {
+      id: `bayt-${jobData.id}`,
+      title: jobData.title,
+      companyName: jobData.company.name,
+      jobUrl,
+      location,
+      description,
+      compensation,
+      datePosted,
+      isRemote: this.isRemoteJob(jobData.location.city, description),
+      emails: description ? extractEmailsFromText(description) || undefined : undefined,
+      companyLogo: jobData.company.logo,
+      skills: jobData.skills,
+      jobType: jobData.job_type ? [this.mapBaytJobType(jobData.job_type)] : undefined,
+    };
+  }
+
+  private async processJob(jobData: BaytJobData, input?: ScraperInput): Promise<JobPost | null> {
+    const jobUrl = jobData.url;
+
     if (this.seenUrls.has(jobUrl)) {
       return null;
     }
@@ -184,7 +239,9 @@ export class BaytScraper extends Scraper {
     // Fetch detailed job information
     let detailedJob = jobData;
     try {
-      detailedJob = await this.fetchJobDetails(jobData.id, input);
+      if (input) {
+        detailedJob = await this.fetchJobDetails(jobData.id);
+      }
     } catch (error) {
       logger.warn(`Failed to fetch details for job ${jobData.id}:`, error);
     }
@@ -194,14 +251,14 @@ export class BaytScraper extends Scraper {
       country: detailedJob.location.country,
     };
 
-    const compensation = this.parseCompensation(detailedJob.salary);
-    
+    const compensation = detailedJob.salary ? this.parseCompensation(detailedJob.salary) : undefined;
+
     let description = detailedJob.description;
-    if (input.descriptionFormat === DescriptionFormat.MARKDOWN && description) {
+    if (input?.descriptionFormat === DescriptionFormat.MARKDOWN && description) {
       description = markdownConverter(description);
     }
 
-    const datePosted = detailedJob.posted_date ? 
+    const datePosted = detailedJob.posted_date ?
       new Date(detailedJob.posted_date).toISOString().split('T')[0] : undefined;
 
     return {
@@ -221,11 +278,11 @@ export class BaytScraper extends Scraper {
     };
   }
 
-  private async fetchJobDetails(jobId: string, input: ScraperInput): Promise<BaytJobData> {
+  private async fetchJobDetails(jobId: string): Promise<BaytJobData> {
     try {
       const url = `${this.baseUrl}/en/jobs/job/${jobId}/`;
       const response = await this.session.get(url);
-      
+
       // Parse detailed job page
       return this.parseJobDetailsHTML(response.data, jobId);
     } catch (error) {
@@ -254,7 +311,7 @@ export class BaytScraper extends Scraper {
     };
   }
 
-  private parseLocationString(locationStr: string): { city: string; country: string } {
+  private parseLocationString(locationStr: string): { city: string; country: string; } {
     const parts = locationStr.split(',').map(part => part.trim());
     return {
       city: parts[0] || '',
@@ -262,7 +319,7 @@ export class BaytScraper extends Scraper {
     };
   }
 
-  private parseCompensation(salary?: BaytJobData['salary']): Compensation | undefined {
+  private parseCompensation(salary: { min: number; max: number; currency: string; period: string }): Compensation | undefined {
     if (!salary) return undefined;
 
     return {
@@ -304,7 +361,7 @@ export class BaytScraper extends Scraper {
       [JobType.TEMPORARY]: 'temporary',
       [JobType.INTERNSHIP]: 'internship',
     };
-    
+
     return mapping[jobType] || 'full-time';
   }
 
@@ -337,14 +394,14 @@ export class BaytScraper extends Scraper {
       'temporary': JobType.TEMPORARY,
       'internship': JobType.INTERNSHIP,
     };
-    
+
     return mapping[jobType.toLowerCase()] || JobType.FULL_TIME;
   }
 
   private isRemoteJob(location: string, description?: string): boolean {
     const remoteKeywords = ['remote', 'work from home', 'wfh', 'telecommute'];
     const text = (location + ' ' + (description || '')).toLowerCase();
-    
+
     return remoteKeywords.some(keyword => text.includes(keyword));
   }
 

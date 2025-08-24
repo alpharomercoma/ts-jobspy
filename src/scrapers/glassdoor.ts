@@ -1,16 +1,17 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { Scraper } from '../models';
-import { 
-  ScraperInput, 
-  JobResponse, 
-  JobPost, 
-  Site, 
-  DescriptionFormat, 
-  CompensationInterval,
-  Location,
+import {
   Compensation,
+  CompensationInterval,
   Country,
-  JobType
+  DescriptionFormat,
+  JobPost,
+  JobResponse,
+  JobType,
+  Location,
+  ScraperConfig,
+  ScraperInput,
+  Site
 } from '../types';
 import { createLogger, extractEmailsFromText, markdownConverter } from '../utils';
 
@@ -29,7 +30,7 @@ interface GlassdoorJobData {
     };
     header: {
       employerNameFromSearch: string;
-      employer?: { id: string };
+      employer?: { id: string; };
       locationName?: string;
       locationType?: string;
       ageInDays?: number;
@@ -40,14 +41,14 @@ interface GlassdoorJobData {
   };
 }
 
-interface GlassdoorCompensation {
-  salaryRange?: {
-    min?: number;
-    max?: number;
-    currency?: string;
-    payPeriod?: string;
-  };
-}
+// interface _GlassdoorCompensation { // Unused interface
+//   salaryRange?: {
+//     min?: number;
+//     max?: number;
+//     currency?: string;
+//     payPeriod?: string;
+//   };
+// }
 
 const FALLBACK_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
 
@@ -91,7 +92,7 @@ const QUERY_TEMPLATE = `
       }
     }
   }
-  
+
   fragment JobView on JobListingSearchResult {
     jobview: jobView {
       job {
@@ -122,9 +123,9 @@ export class GlassdoorScraper extends Scraper {
   private jobsPerPage = 30;
   private maxPages = 30;
 
-  constructor(config: any = {}) {
+  constructor (config: ScraperConfig = {}) {
     super(Site.GLASSDOOR, config);
-    
+
     this.session = axios.create({
       timeout: 15000,
       headers: {
@@ -156,9 +157,9 @@ export class GlassdoorScraper extends Scraper {
   async scrape(input: ScraperInput): Promise<JobResponse> {
     try {
       this.baseUrl = this.getGlassdoorUrl(input.country || Country.USA);
-      
+
       // Get CSRF token
-      const token = await this.getCsrfToken();
+      const token = await this.extractCsrfToken();
       this.session.defaults.headers['gd-csrf-token'] = token || FALLBACK_TOKEN;
 
       // Get location info
@@ -171,25 +172,25 @@ export class GlassdoorScraper extends Scraper {
       const jobs: JobPost[] = [];
       let cursor: string | null = null;
       const maxResults = Math.min(900, input.resultsWanted || 15);
-      
+
       const rangeStart = 1 + Math.floor((input.offset || 0) / this.jobsPerPage);
       const totalPages = Math.ceil(maxResults / this.jobsPerPage) + 1;
       const rangeEnd = Math.min(totalPages, this.maxPages + 1);
 
       for (let page = rangeStart; page < rangeEnd; page++) {
         logger.info(`Scraping page ${page}/${rangeEnd - 1}`);
-        
+
         try {
           const { jobs: pageJobs, nextCursor } = await this.fetchJobsPage(
-            input, 
-            locationInfo, 
-            page, 
+            input,
+            locationInfo,
+            page,
             cursor
           );
-          
+
           jobs.push(...pageJobs);
           cursor = nextCursor;
-          
+
           if (!pageJobs.length || jobs.length >= maxResults) {
             break;
           }
@@ -206,7 +207,7 @@ export class GlassdoorScraper extends Scraper {
     }
   }
 
-  private async getCsrfToken(): Promise<string | null> {
+  private async extractCsrfToken(): Promise<string | null> {
     try {
       const response = await this.session.get(`${this.baseUrl}/Job/computer-science-jobs.htm`);
       const tokenMatch = response.data.match(/"token":\s*"([^"]+)"/);
@@ -225,19 +226,19 @@ export class GlassdoorScraper extends Scraper {
     try {
       const url = `${this.baseUrl}/findPopularLocationAjax.htm?maxLocationsToReturn=10&term=${encodeURIComponent(location)}`;
       const response = await this.session.get(url);
-      
+
       if (response.status === 429) {
         logger.error('Rate limited by Glassdoor');
         return null;
       }
-      
+
       if (!response.data || !response.data.length) {
         throw new Error(`Location '${location}' not found`);
       }
 
       const item = response.data[0];
       let locationType = item.locationType;
-      
+
       if (locationType === 'C') locationType = 'CITY';
       else if (locationType === 'S') locationType = 'STATE';
       else if (locationType === 'N') locationType = 'COUNTRY';
@@ -257,9 +258,9 @@ export class GlassdoorScraper extends Scraper {
     locationInfo: GlassdoorLocation,
     pageNum: number,
     cursor: string | null
-  ): Promise<{ jobs: JobPost[]; nextCursor: string | null }> {
+  ): Promise<{ jobs: JobPost[]; nextCursor: string | null; }> {
     const payload = this.buildPayload(input, locationInfo, pageNum, cursor);
-    
+
     try {
       const response: AxiosResponse = await this.session.post(
         `${this.baseUrl}/graph`,
@@ -296,7 +297,7 @@ export class GlassdoorScraper extends Scraper {
   private async processJob(jobData: GlassdoorJobData, input: ScraperInput): Promise<JobPost | null> {
     const jobId = jobData.jobview.job.listingId;
     const jobUrl = `${this.baseUrl}/job-listing/j?jl=${jobId}`;
-    
+
     if (this.seenUrls.has(jobUrl)) {
       return null;
     }
@@ -327,7 +328,7 @@ export class GlassdoorScraper extends Scraper {
     }
 
     const compensation = this.parseCompensation(job.header);
-    
+
     let description: string | undefined;
     try {
       description = await this.fetchJobDescription(jobId, input.descriptionFormat);
@@ -337,7 +338,7 @@ export class GlassdoorScraper extends Scraper {
 
     const companyUrl = companyId ? `${this.baseUrl}/Overview/W-EI_IE${companyId}.htm` : undefined;
     const companyLogo = job.overview?.squareLogoUrl;
-    const listingType = (job.header as any).adOrderSponsorshipLevel?.toLowerCase() || '';
+    const listingType = (job.header as { adOrderSponsorshipLevel?: string; }).adOrderSponsorshipLevel?.toLowerCase() || '';
 
     return {
       id: `gd-${jobId}`,
@@ -382,18 +383,18 @@ export class GlassdoorScraper extends Scraper {
 
     try {
       const response = await this.session.post(`${this.baseUrl}/graph`, [payload]);
-      
+
       if (response.status !== 200) {
         return undefined;
       }
 
       const data = response.data[0];
       let description = data.data.jobview.job.description;
-      
+
       if (format === DescriptionFormat.MARKDOWN && description) {
         description = markdownConverter(description);
       }
-      
+
       return description;
     } catch (error) {
       logger.warn('Failed to fetch job description:', error);
@@ -406,14 +407,14 @@ export class GlassdoorScraper extends Scraper {
     locationInfo: GlassdoorLocation,
     pageNum: number,
     cursor: string | null
-  ) {
+  ): object {
     const fromage = input.hoursOld ? Math.max(Math.floor(input.hoursOld / 24), 1) : undefined;
-    const filterParams: any[] = [];
+    const filterParams: Array<{ filterKey: string; values: string | string[]; }> = [];
 
     if (input.easyApply) {
       filterParams.push({ filterKey: 'applicationType', values: '1' });
     }
-    
+
     if (fromage) {
       filterParams.push({ filterKey: 'fromAge', values: fromage.toString() });
     }
@@ -421,8 +422,8 @@ export class GlassdoorScraper extends Scraper {
     if (input.jobType) {
       const jobTypeValues = this.mapJobTypeToGlassdoor(input.jobType);
       if (jobTypeValues) {
-        filterParams.push({ 
-          filterKey: 'jobType', 
+        filterParams.push({
+          filterKey: 'jobType',
           values: jobTypeValues
         });
       }
@@ -446,20 +447,21 @@ export class GlassdoorScraper extends Scraper {
     };
   }
 
-  private parseLocation(locationName: string): Location {
+  private parseLocation(locationData: string): Location {
+    const locationName = locationData;
     const parts = locationName.split(', ');
     const location: Location = {};
-    
+
     if (parts.length >= 1) location.city = parts[0];
     if (parts.length >= 2) location.state = parts[1];
     if (parts.length >= 3) location.country = parts[2];
-    
+
     return location;
   }
 
-  private parseCompensation(header: any): Compensation | undefined {
+  private parseCompensation(jobElement: Record<string, unknown>): Compensation | undefined {
     // Glassdoor compensation parsing logic
-    const salaryRange = header.salaryRange;
+    const salaryRange = jobElement.salaryRange as any;
     if (!salaryRange) return undefined;
 
     return {
@@ -496,11 +498,11 @@ export class GlassdoorScraper extends Scraper {
       [JobType.TEMPORARY]: ['TEMPORARY'],
       [JobType.INTERNSHIP]: ['INTERNSHIP'],
     };
-    
+
     return mapping[jobType];
   }
 
-  private getCursorForPage(cursors: any[], pageNumber: number): string | null {
+  private getCursorForPage(cursors: Array<{ pageNumber: number; cursor: string; }>, pageNumber: number): string | null {
     const cursor = cursors.find(c => c.pageNumber === pageNumber);
     return cursor ? cursor.cursor : null;
   }
@@ -528,7 +530,7 @@ export class GlassdoorScraper extends Scraper {
       [Country.HONG_KONG]: 'https://www.glassdoor.com.hk',
       [Country.NEW_ZEALAND]: 'https://www.glassdoor.co.nz',
     };
-    
+
     return urls[country] || urls[Country.USA] || 'https://www.glassdoor.com';
   }
 }

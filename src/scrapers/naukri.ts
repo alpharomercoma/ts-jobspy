@@ -1,15 +1,15 @@
 import axios, { AxiosInstance } from 'axios';
 import { Scraper } from '../models';
-import { 
-  ScraperInput, 
-  JobResponse, 
-  JobPost, 
-  Site, 
-  DescriptionFormat,
-  Location,
+import {
   Compensation,
   CompensationInterval,
   Country,
+  DescriptionFormat,
+  JobPost,
+  JobResponse,
+  Location,
+  ScraperInput,
+  Site,
 } from '../types';
 import { createLogger, extractEmailsFromText, markdownConverter } from '../utils';
 
@@ -50,7 +50,7 @@ export class NaukriScraper extends Scraper {
 
   constructor(config: any = {}) {
     super(Site.NAUKRI, config);
-    
+
     this.session = axios.create({
       timeout: 15000,
       headers: {
@@ -86,7 +86,7 @@ export class NaukriScraper extends Scraper {
       while (jobs.length < maxResults) {
         const pagesToScrape = Math.ceil((maxResults - jobs.length) / jobsPerPage);
         logger.info(`Scraping Naukri page ${page}/${pagesToScrape}`);
-        
+
         try {
           const pageJobs = await this.fetchJobsPage(input, page);
           if (!pageJobs.length) {
@@ -99,7 +99,7 @@ export class NaukriScraper extends Scraper {
               jobs.push(job);
             }
           }
-          
+
         } catch (error) {
           logger.error(`Error on page ${page}:`, error);
           break;
@@ -115,7 +115,7 @@ export class NaukriScraper extends Scraper {
   }
 
   private async fetchJobsPage(input: ScraperInput, page: number): Promise<JobPost[]> {
-    const params: any = {
+    const params: Record<string, unknown> = {
       noOfResults: 20,
       urlType: 'search_by_keyword',
       searchType: 'adv',
@@ -248,7 +248,7 @@ export class NaukriScraper extends Scraper {
         minAmount,
         maxAmount,
         currency: 'INR',
-        interval: CompensationInterval.YEARLY, 
+        interval: CompensationInterval.YEARLY,
       };
     }
     return undefined;

@@ -4,7 +4,7 @@ export function parseSalary(salaryText: string): Compensation | undefined {
   if (!salaryText) return undefined;
 
   const cleanText = salaryText.replace(/[,\s]/g, '').toLowerCase();
-  
+
   // Extract numbers
   const numbers = cleanText.match(/\d+(?:\.\d+)?/g);
   if (!numbers || numbers.length === 0) return undefined;
@@ -24,7 +24,7 @@ export function parseSalary(salaryText: string): Compensation | undefined {
   else if (cleanText.includes('month') || cleanText.includes('/month')) interval = CompensationInterval.MONTHLY;
 
   const amounts = numbers.map(n => parseFloat(n));
-  
+
   if (amounts.length === 1) {
     return {
       minAmount: amounts[0],

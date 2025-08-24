@@ -1,18 +1,17 @@
 import axios, { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
 import { Scraper } from '../models';
-import { 
-  ScraperInput, 
-  JobResponse, 
-  JobPost, 
-  Site, 
-  DescriptionFormat,
-  Location,
+import {
   Compensation,
   CompensationInterval,
+  JobPost,
+  JobResponse,
   JobType,
+  Location,
+  ScraperInput,
+  Site,
 } from '../types';
-import { createLogger, extractEmailsFromText, markdownConverter, extractJobType } from '../utils';
+import { createLogger, extractEmailsFromText, extractJobType, markdownConverter } from '../utils';
 
 const logger = createLogger('Google');
 
@@ -23,9 +22,9 @@ export class GoogleScraper extends Scraper {
   private session: AxiosInstance;
   private seenIds: Set<string> = new Set();
 
-  constructor(config: any = {}) {
+  constructor (config: any = {}) {
     super(Site.GOOGLE, config);
-    
+
     this.session = axios.create({
       timeout: 15000,
       headers: {
@@ -63,7 +62,7 @@ export class GoogleScraper extends Scraper {
       let currentCursor = forwardCursor;
       while (jobList.length < input.resultsWanted && currentCursor) {
         logger.info(`Paginating with cursor: ${currentCursor.substring(0, 20)}...`);
-        const { jobs, nextCursor } = await this.getNextPageJobs(currentCursor, input);
+        const { jobs, nextCursor } = await this.getNextPageJobs(currentCursor);
         if (!jobs.length) {
           logger.info('No more jobs found on subsequent pages.');
           break;
@@ -94,16 +93,16 @@ export class GoogleScraper extends Scraper {
     }
     if (input.location) query += ` near ${input.location}`;
     if (input.hoursOld) {
-      const timeFilter = input.hoursOld <= 24 ? 'since yesterday' : 
-                         input.hoursOld <= 72 ? 'in the last 3 days' : 
-                         input.hoursOld <= 168 ? 'in the last week' : 'in the last month';
+      const timeFilter = input.hoursOld <= 24 ? 'since yesterday' :
+        input.hoursOld <= 72 ? 'in the last 3 days' :
+          input.hoursOld <= 168 ? 'in the last week' : 'in the last month';
       query += ` ${timeFilter}`;
     }
     if (input.isRemote) query += ' remote';
     return input.googleSearchTerm || query;
   }
 
-  private async getInitialJobsAndCursor(input: ScraperInput): Promise<{ initialJobs: JobPost[], forwardCursor: string | null }> {
+  private async getInitialJobsAndCursor(input: ScraperInput): Promise<{ initialJobs: JobPost[], forwardCursor: string | null; }> {
     const query = this.buildSearchQuery(input);
     const response = await this.session.get(G_SEARCH_URL, { params: { q: query, udm: '8' } });
     const $ = cheerio.load(response.data);
@@ -118,10 +117,10 @@ export class GoogleScraper extends Scraper {
         try {
           const jsonData = JSON.parse(content);
           if (jsonData['@type'] === 'JobPosting') {
-            const job = this.processJob(jsonData, input);
+            const job = this.parseJobsFromJson(jsonData);
             if (job) initialJobs.push(job);
           }
-        } catch (e) {
+        } catch {
           logger.warn('Failed to parse initial job LD+JSON');
         }
       }
@@ -130,7 +129,7 @@ export class GoogleScraper extends Scraper {
     return { initialJobs, forwardCursor: forwardCursor || null };
   }
 
-  private async getNextPageJobs(cursor: string, input: ScraperInput): Promise<{ jobs: JobPost[], nextCursor: string | null }> {
+  private async getNextPageJobs(cursor: string): Promise<{ jobs: JobPost[], nextCursor: string | null; }> {
     const asyncParam = 'end:1,element_id:YvgnAc,action:page,context:0,query:,cursor:' + cursor;
     const response = await this.session.get(G_JOBS_URL, { params: { fc: cursor, fcv: '3', async: asyncParam } });
 
@@ -140,23 +139,23 @@ export class GoogleScraper extends Scraper {
     // The response is not valid HTML, so we use regex to find the relevant script tag content
     const scriptContentMatch = responseText.match(/<script.*?>\s*window.jsa\s*=\s*(.*?);<\/script>/s);
     if (scriptContentMatch && scriptContentMatch[1]) {
-        try {
-            const jsonData = JSON.parse(scriptContentMatch[1]);
-            // The actual job data is nested deep inside this JSON structure.
-            // The exact path might change, this is based on current observations.
-            const jobPostings = jsonData[2]?.[0]?.[0]?.[1]?.[0];
-            if (Array.isArray(jobPostings)) {
-                for (const posting of jobPostings) {
-                    const jobData = posting[0]?.[0];
-                    if (jobData) {
-                        const job = this.processJob(jobData, input);
-                        if (job) jobs.push(job);
-                    }
-                }
+      try {
+        const jsonData = JSON.parse(scriptContentMatch[1]);
+        // The actual job data is nested deep inside this JSON structure.
+        // The exact path might change, this is based on current observations.
+        const jobPostings = jsonData[2]?.[0]?.[0]?.[1]?.[0];
+        if (Array.isArray(jobPostings)) {
+          for (const posting of jobPostings) {
+            const jobData = posting[0]?.[0];
+            if (jobData) {
+              const job = this.parseJobsFromJson(jobData);
+              if (job) jobs.push(job);
             }
-        } catch (e) {
-            logger.warn('Failed to parse paginated job data JSON', e);
+          }
         }
+      } catch (e) {
+        logger.warn('Failed to parse paginated job data JSON', e);
+      }
     }
 
     // Cheerio is used here on the full response to find the next cursor, which is in a div
@@ -164,9 +163,9 @@ export class GoogleScraper extends Scraper {
     const nextCursor = $('div[jsname="Yust4d"]').attr('data-async-fc');
 
     return { jobs, nextCursor: nextCursor || null };
-}
+  }
 
-  private processJob(jobData: any, input: ScraperInput): JobPost | null {
+  private parseJobsFromJson(jobData: any): JobPost | null {
     const jobId = jobData.identifier?.value || jobData.jobLocation?.address?.postalCode || Math.random().toString();
     if (this.seenIds.has(jobId)) return null;
     this.seenIds.add(jobId);

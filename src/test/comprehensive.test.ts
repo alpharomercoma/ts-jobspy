@@ -1,6 +1,6 @@
 import { scrapeJobs, ScrapeJobsOptions } from '../index';
-import { Site, JobType, Country, DescriptionFormat } from '../types';
 import { JobDataFrame } from '../models';
+import { DescriptionFormat, JobType, Site } from '../types';
 
 describe('JobSpy Comprehensive Tests', () => {
   // Test timeout for scraping operations
@@ -43,9 +43,9 @@ describe('JobSpy Comprehensive Tests', () => {
       ];
 
       for (const siteName of testCases) {
-        const result = await scrapeJobs({ 
-          siteName: siteName, 
-          resultsWanted: 1 
+        const result = await scrapeJobs({
+          siteName: siteName,
+          resultsWanted: 1
         });
         expect(result).toBeInstanceOf(JobDataFrame);
       }
@@ -161,15 +161,15 @@ describe('JobSpy Comprehensive Tests', () => {
 
     test('should support toCsv() method', async () => {
       await expect(jobDataFrame.toCsv('test-output.csv')).resolves.not.toThrow();
-      await expect(jobDataFrame.toCsv('test-output-quoted.csv', { 
-        quoting: 'nonnumeric' 
+      await expect(jobDataFrame.toCsv('test-output-quoted.csv', {
+        quoting: 'nonnumeric'
       })).resolves.not.toThrow();
     });
 
     test('should support toJson() method', async () => {
       await expect(jobDataFrame.toJson('test-output.json')).resolves.not.toThrow();
-      await expect(jobDataFrame.toJson('test-output-pretty.json', { 
-        pretty: true 
+      await expect(jobDataFrame.toJson('test-output-pretty.json', {
+        pretty: true
       })).resolves.not.toThrow();
     });
 
@@ -208,7 +208,7 @@ describe('JobSpy Comprehensive Tests', () => {
     test('should handle various job types', async () => {
       const jobTypes = [
         'fulltime',
-        'parttime', 
+        'parttime',
         'contract',
         'internship',
         JobType.FULL_TIME,
@@ -255,19 +255,19 @@ describe('JobSpy Comprehensive Tests', () => {
   describe('Performance Tests', () => {
     test('should complete within reasonable time for small requests', async () => {
       const startTime = Date.now();
-      
+
       await scrapeJobs({
         siteName: 'indeed',
         searchTerm: 'developer',
         resultsWanted: 5,
       });
-      
+
       const duration = Date.now() - startTime;
       expect(duration).toBeLessThan(15000); // Should complete within 15 seconds
     }, 20000);
 
     test('should handle concurrent requests', async () => {
-      const promises = Array(3).fill(null).map(() => 
+      const promises = Array(3).fill(null).map(() =>
         scrapeJobs({
           siteName: 'indeed',
           searchTerm: 'engineer',

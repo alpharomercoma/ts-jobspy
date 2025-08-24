@@ -113,7 +113,7 @@ export enum Site {
 }
 
 // Strict string literal types for site names (exact match only)
-export type SiteName = 
+export type SiteName =
   | 'linkedin'
   | 'indeed'
   | 'ziprecruiter'

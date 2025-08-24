@@ -1,43 +1,40 @@
 import * as cheerio from 'cheerio';
 import { Scraper } from '../models';
 import {
-  Site,
-  ScraperInput,
-  JobResponse,
   JobPost,
+  JobResponse,
   JobType,
-  CompensationInterval,
-  Compensation,
-  DescriptionFormat,
+  // Compensation, // Unused import
   Location,
+  ScraperInput,
+  Site,
 } from '../types';
-import { SessionManager, createLogger, MarkdownConverter, extractEmailsFromText } from '../utils';
-import { LocationHelper, JobTypeHelper } from '../models';
+import { createLogger, MarkdownConverter, SessionManager } from '../utils';
 
 const logger = createLogger('LinkedIn');
 
-interface LinkedInJobData {
-  jobId: string;
-  title: string;
-  companyName: string;
-  companyUrl?: string;
-  location: string;
-  postedDate: string;
-  applyUrl: string;
-  description?: string;
-  workplaceTypes?: string[];
-  employmentType?: string;
-  experienceLevel?: string;
-  industries?: string[];
-  functions?: string[];
-}
+// interface _LinkedInJobData { // Unused interface
+//   jobId: string;
+//   title: string;
+//   companyName: string;
+//   companyUrl?: string;
+//   location: string;
+//   postedDate: string;
+//   applyUrl: string;
+//   description?: string;
+//   workplaceTypes?: string[];
+//   employmentType?: string;
+//   seniorityLevel?: string;
+//   industries?: string[];
+//   jobFunction?: string[];
+// }
 
 export class LinkedInScraper extends Scraper {
   private session: SessionManager;
   private seenUrls: Set<string> = new Set();
   private markdownConverter: MarkdownConverter;
 
-  constructor(config?: { proxies?: string[] | string; caCert?: string; userAgent?: string }) {
+  constructor (config?: { proxies?: string[] | string; caCert?: string; userAgent?: string; }) {
     super(Site.LINKEDIN, config);
     this.session = new SessionManager({
       proxies: this.proxies,
@@ -104,7 +101,7 @@ export class LinkedInScraper extends Scraper {
         return [];
       }
 
-      return this.parseJobsFromHtml(response.data, input);
+      return this.parseJobsFromHtml(response.data);
     } catch (error) {
       logger.error('Error making LinkedIn request:', error);
       return [];
@@ -174,57 +171,57 @@ export class LinkedInScraper extends Scraper {
     return params.toString();
   }
 
-  private parseJobsFromHtml(html: string, input: ScraperInput): JobPost[] {
+  private parseJobsFromHtml(html: string): JobPost[] {
     const $ = cheerio.load(html);
     const jobCards = $('div.base-search-card');
     const jobs: JobPost[] = [];
 
     jobCards.each((index, element) => {
-        const jobCard = $(element);
-        const hrefTag = jobCard.find('a.base-card__full-link');
-        const href = hrefTag.attr('href')?.split('?')[0];
-        if (!href) return;
+      const jobCard = $(element);
+      const hrefTag = jobCard.find('a.base-card__full-link');
+      const href = hrefTag.attr('href')?.split('?')[0];
+      if (!href) return;
 
-        const jobIdMatch = href.match(/(\d+)$/);
-        if (!jobIdMatch) return;
-        const jobId = jobIdMatch[1];
+      const jobIdMatch = href.match(/(\d+)$/);
+      if (!jobIdMatch) return;
+      const jobId = jobIdMatch[1];
 
-        if (this.seenUrls.has(jobId)) {
-            return;
-        }
-        this.seenUrls.add(jobId);
+      if (this.seenUrls.has(jobId)) {
+        return;
+      }
+      this.seenUrls.add(jobId);
 
-        const titleTag = jobCard.find('span.sr-only');
-        const title = titleTag.text().trim() || 'N/A';
+      const titleTag = jobCard.find('span.sr-only');
+      const title = titleTag.text().trim() || 'N/A';
 
-        const companyTag = jobCard.find('h4.base-search-card__subtitle a');
-        const companyName = companyTag.text().trim() || 'N/A';
-        const companyUrl = companyTag.attr('href')?.split('?')[0] || '';
+      const companyTag = jobCard.find('h4.base-search-card__subtitle a');
+      const companyName = companyTag.text().trim() || 'N/A';
+      const companyUrl = companyTag.attr('href')?.split('?')[0] || '';
 
-        const metadataCard = jobCard.find('div.base-search-card__metadata');
-        const locationStr = metadataCard.find('span.job-search-card__location').text().trim();
-        const location = this.parseLocation(locationStr);
+      const metadataCard = jobCard.find('div.base-search-card__metadata');
+      const locationStr = metadataCard.find('span.job-search-card__location').text().trim();
+      const location = this.parseLocation(locationStr);
 
-        const datetimeTag = metadataCard.find('time.job-search-card__listdate');
-        const postedDate = datetimeTag.attr('datetime') ? new Date(datetimeTag.attr('datetime')!) : undefined;
+      const datetimeTag = metadataCard.find('time.job-search-card__listdate');
+      const postedDate = datetimeTag.attr('datetime') ? new Date(datetimeTag.attr('datetime')!) : undefined;
 
-        const salaryTag = jobCard.find('span.job-search-card__salary-info');
-        let compensation: Compensation | undefined;
-        if (salaryTag.length > 0) {
-            // Placeholder for salary parsing logic
-        }
+      const salaryTag = jobCard.find('span.job-search-card__salary-info');
+      // let _compensation: Compensation | undefined; // Unused variable
+      if (salaryTag.length > 0) {
+        // Placeholder for salary parsing logic
+      }
 
-        const jobPost: JobPost = {
-            id: `li-${jobId}`,
-            title,
-            companyName,
-            companyUrl,
-            location,
-            jobUrl: href,
-            datePosted: postedDate?.toISOString().split('T')[0],
-        };
+      const jobPost: JobPost = {
+        id: `li-${jobId}`,
+        title,
+        companyName,
+        companyUrl,
+        location,
+        jobUrl: href,
+        datePosted: postedDate?.toISOString().split('T')[0],
+      };
 
-        jobs.push(jobPost);
+      jobs.push(jobPost);
     });
 
     return jobs;

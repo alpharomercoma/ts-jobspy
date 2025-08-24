@@ -10,13 +10,13 @@ beforeAll(() => {
 
 // Global test utilities
 declare global {
-  var testTimeout: number;
-  var mockNetworkDelay: (ms?: number) => Promise<void>;
+  const testTimeout: number;
+  const mockNetworkDelay: (ms?: number) => Promise<void>;
 }
 
-(global as any).testTimeout = 30000;
+(global as unknown as { testTimeout: number }).testTimeout = 30000;
 
 // Mock network delays for testing
-(global as any).mockNetworkDelay = (ms: number = 100) => {
+(global as unknown as { mockNetworkDelay: (ms?: number) => Promise<void> }).mockNetworkDelay = (ms: number = 100): Promise<void> => {
   return new Promise(resolve => setTimeout(resolve, ms));
 };

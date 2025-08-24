@@ -1,4 +1,4 @@
-import { JobDataFrame } from '../models';
+import { JobDataFrame } from '../models/JobDataFrame';
 
 describe('Unit Tests', () => {
 
@@ -15,7 +15,7 @@ describe('Unit Tests', () => {
       },
       {
         id: '2',
-        title: 'Frontend Developer',
+        title: 'Web Developer',
         companyName: 'Web Inc',
         jobUrl: 'https://example.com/job2',
         location: { city: 'New York', state: 'NY' },
@@ -42,13 +42,13 @@ describe('Unit Tests', () => {
 
     test('should return tail correctly', () => {
       expect(dataFrame.tail(1)).toHaveLength(1);
-      expect(dataFrame.tail(1)[0].title).toBe('Frontend Developer');
+      expect(dataFrame.tail(1)[0].title).toBe('Web Developer');
     });
 
     test('should filter correctly', () => {
       const remote = dataFrame.filter(job => job.isRemote === true);
       expect(remote.length).toBe(1);
-      expect(remote.head(1)[0].title).toBe('Frontend Developer');
+      expect(remote.head(1)[0].title).toBe('Web Developer');
     });
 
     test('should group by correctly', () => {
@@ -64,7 +64,7 @@ describe('Unit Tests', () => {
       expect(empty.length).toBe(0);
       expect(empty.head()).toHaveLength(0);
       expect(empty.tail()).toHaveLength(0);
-      expect(() => empty.filter(job => true)).not.toThrow();
+      expect(() => empty.filter(() => true)).not.toThrow();
     });
   });
 });

@@ -1,13 +1,10 @@
 import {
-  JobPost,
-  JobResponse,
-  ScraperInput,
-  Site,
   Country,
+  JobResponse,
   JobType,
-  CompensationInterval,
   Location,
-  Compensation,
+  ScraperInput,
+  Site
 } from '../types';
 
 export abstract class Scraper {
@@ -124,9 +121,9 @@ export class CountryHelper {
 
   static fromString(countryStr: string): Country {
     const normalized = countryStr.trim().toLowerCase();
-    
+
     // Direct mapping
-    for (const [key, value] of Object.entries(Country)) {
+    for (const value of Object.values(Country)) {
       if (value === normalized) {
         return value as Country;
       }
@@ -152,15 +149,15 @@ export class CountryHelper {
 export class LocationHelper {
   static displayLocation(location: Location): string {
     const parts: string[] = [];
-    
+
     if (location.city) {
       parts.push(location.city);
     }
-    
+
     if (location.state) {
       parts.push(location.state);
     }
-    
+
     if (typeof location.country === 'string') {
       parts.push(location.country);
     } else if (location.country && location.country !== Country.US_CANADA && location.country !== Country.WORLDWIDE) {
@@ -171,7 +168,7 @@ export class LocationHelper {
         parts.push(countryName.replace(/[_-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()));
       }
     }
-    
+
     return parts.join(', ');
   }
 }
@@ -199,13 +196,13 @@ export class JobTypeHelper {
 
   static fromString(jobTypeStr: string): JobType | null {
     const normalized = jobTypeStr.toLowerCase().trim();
-    
+
     for (const [jobType, patterns] of Object.entries(this.jobTypePatterns)) {
       if (patterns.includes(normalized)) {
         return jobType as JobType;
       }
     }
-    
+
     return null;
   }
 

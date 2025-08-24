@@ -1,5 +1,5 @@
-import { createLogger } from './index';
 import { JobPost, ScraperInput } from '../types';
+import { createLogger } from './index';
 
 const logger = createLogger('EdgeCaseHandler');
 
@@ -56,7 +56,7 @@ export class EdgeCaseHandler {
         return await operation();
       } catch (error: any) {
         lastError = error;
-        
+
         // Don't retry on certain error types
         if (this.isNonRetryableError(error)) {
           throw error;
@@ -79,7 +79,7 @@ export class EdgeCaseHandler {
   private static isNonRetryableError(error: any): boolean {
     const nonRetryableStatuses = [400, 401, 403, 404, 422];
     const nonRetryableCodes = ['ENOTFOUND', 'ECONNREFUSED'];
-    
+
     return (
       nonRetryableStatuses.includes(error.response?.status) ||
       nonRetryableCodes.includes(error.code) ||
@@ -149,7 +149,7 @@ export class EdgeCaseHandler {
   private static calculateBackoffDelay(error: any): number {
     const baseDelay = 5000; // 5 seconds
     const maxDelay = 300000; // 5 minutes
-    
+
     // Extract retry-after header if available
     const retryAfter = error.response?.headers?.['retry-after'];
     if (retryAfter) {

@@ -1,17 +1,16 @@
-import { Scraper } from '../models';
+import { CountryHelper, JobTypeHelper, Scraper } from '../models';
 import {
-  Site,
-  ScraperInput,
-  JobResponse,
-  JobPost,
-  JobType,
-  CompensationInterval,
   Compensation,
+  CompensationInterval,
   DescriptionFormat,
+  JobPost,
+  JobResponse,
+  JobType,
   Location,
+  ScraperInput,
+  Site,
 } from '../types';
-import { SessionManager, createLogger, MarkdownConverter, extractEmailsFromText } from '../utils';
-import { CountryHelper, LocationHelper, JobTypeHelper } from '../models';
+import { MarkdownConverter, SessionManager, createLogger, extractEmailsFromText } from '../utils';
 
 const logger = createLogger('Indeed');
 
@@ -195,7 +194,7 @@ export class IndeedScraper extends Scraper {
 
   async scrape(input: ScraperInput): Promise<JobResponse> {
     logger.info('Starting Indeed scrape');
-    
+
     if (!input.country) {
       throw new Error('Country is required for Indeed scraping');
     }
@@ -212,10 +211,10 @@ export class IndeedScraper extends Scraper {
 
     while (this.seenUrls.size < resultsWanted + offset) {
       logger.info(`Scraping page ${page} / ${Math.ceil(resultsWanted / 100)}`);
-      
+
       try {
         const { jobs: pageJobs, nextCursor } = await this.scrapePage(input, cursor);
-        
+
         if (pageJobs.length === 0) {
           logger.info(`No jobs found on page ${page}`);
           break;
@@ -234,7 +233,7 @@ export class IndeedScraper extends Scraper {
 
     const finalJobs = jobs.slice(offset, offset + resultsWanted);
     logger.info(`Scraped ${finalJobs.length} jobs from Indeed`);
-    
+
     return { jobs: finalJobs };
   }
 
@@ -244,10 +243,10 @@ export class IndeedScraper extends Scraper {
   ): Promise<{ jobs: JobPost[]; nextCursor: string | null }> {
     const filters = this.buildFilters(input);
     const searchTerm = input.searchTerm ? input.searchTerm.replace(/"/g, '\\"') : '';
-    
+
     const query = JOB_SEARCH_QUERY
       .replace('{what}', searchTerm ? `what: "${searchTerm}"` : '')
-      .replace('{location}', input.location ? 
+      .replace('{location}', input.location ?
         `location: {where: "${input.location}", radius: ${input.distance || 50}, radiusUnit: MILES}` : '')
       .replace('{cursor}', cursor ? `cursor: "${cursor}"` : '')
       .replace('{filters}', filters);
@@ -257,7 +256,7 @@ export class IndeedScraper extends Scraper {
 
     try {
       const response = await this.session.post('https://apis.indeed.com/graphql', payload, { headers });
-      
+
       if (response.status !== 200) {
         logger.warn(`API responded with status ${response.status}`);
         return { jobs: [], nextCursor: null };
@@ -320,11 +319,11 @@ export class IndeedScraper extends Scraper {
       };
 
       const keys: string[] = [];
-      
+
       if (input.jobType && jobTypeMapping[input.jobType]) {
         keys.push(jobTypeMapping[input.jobType]);
       }
-      
+
       if (input.isRemote) {
         keys.push('DSQF7');
       }
@@ -351,7 +350,7 @@ export class IndeedScraper extends Scraper {
 
   private processJob(job: IndeedJobData, input: ScraperInput): JobPost | null {
     const jobUrl = `${this.baseUrl}/viewjob?jk=${job.key}`;
-    
+
     if (this.seenUrls.has(jobUrl)) {
       return null;
     }
@@ -365,7 +364,7 @@ export class IndeedScraper extends Scraper {
     const jobTypes = this.getJobTypes(job.attributes);
     const compensation = this.getCompensation(job.compensation);
     const datePosted = new Date(job.datePublished).toISOString().split('T')[0];
-    
+
     const employer = job.employer?.dossier;
     const employerDetails = employer?.employerDetails || {};
 
@@ -380,7 +379,7 @@ export class IndeedScraper extends Scraper {
       title: job.title,
       description,
       companyName: job.employer?.name,
-      companyUrl: job.employer?.relativeCompanyPageUrl ? 
+      companyUrl: job.employer?.relativeCompanyPageUrl ?
         `${this.baseUrl}${job.employer.relativeCompanyPageUrl}` : undefined,
       companyUrlDirect: employer?.links?.corporateWebsite,
       location,
@@ -402,7 +401,7 @@ export class IndeedScraper extends Scraper {
 
   private getJobTypes(attributes: Array<{ key: string; label: string }>): JobType[] {
     const jobTypes: JobType[] = [];
-    
+
     for (const attribute of attributes) {
       const jobTypeStr = attribute.label.replace(/-/g, '').replace(/\s/g, '').toLowerCase();
       const jobType = JobTypeHelper.fromString(jobTypeStr);
@@ -410,7 +409,7 @@ export class IndeedScraper extends Scraper {
         jobTypes.push(jobType);
       }
     }
-    
+
     return jobTypes;
   }
 
@@ -450,7 +449,7 @@ export class IndeedScraper extends Scraper {
 
   private isJobRemote(job: IndeedJobData, description: string): boolean {
     const remoteKeywords = ['remote', 'work from home', 'wfh'];
-    
+
     // Check attributes
     const isRemoteInAttributes = job.attributes.some(attr =>
       remoteKeywords.some(keyword => attr.label.toLowerCase().includes(keyword))
