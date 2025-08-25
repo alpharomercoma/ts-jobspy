@@ -56,10 +56,24 @@ describe('API Compatibility Tests', () => {
   });
 
   describe('Site Name Compatibility', () => {
-    it('should support all original site names', async () => {
-      const originalSites = [
-        'indeed',
-        'linkedin',
+    it('should support working site names', async () => {
+      const workingSites = ['indeed', 'linkedin'];
+
+      for (const site of workingSites) {
+        const jobs = await scrapeJobs({
+          siteName: [site as 'indeed'],
+          searchTerm: 'developer',
+          countryIndeed: 'usa',
+          resultsWanted: 1
+        });
+
+        // Working scrapers should return jobs
+        expect(jobs.length).toBeGreaterThan(0);
+      }
+    }, 30000);
+
+    it('should handle maintenance site names without crashing', async () => {
+      const maintenanceSites = [
         'ziprecruiter',
         'glassdoor',
         'google',
@@ -68,7 +82,7 @@ describe('API Compatibility Tests', () => {
         'bdjobs'
       ];
 
-      for (const site of originalSites) {
+      for (const site of maintenanceSites) {
         const jobs = await scrapeJobs({
           siteName: [site as 'indeed'],
           searchTerm: 'developer',
@@ -76,21 +90,24 @@ describe('API Compatibility Tests', () => {
           resultsWanted: 1
         });
 
+        // Maintenance scrapers may return 0 results but shouldn't crash
         expect(jobs.length).toBeGreaterThanOrEqual(0);
+        expect(Array.isArray(jobs.toArray())).toBe(true);
       }
-    });
+    }, 30000);
 
     it('should support multiple sites like original', async () => {
       const jobs = await scrapeJobs({
-        siteName: ['indeed', 'linkedin', 'ziprecruiter'],
+        siteName: ['indeed', 'linkedin'], // Use only working scrapers for reliable results
         searchTerm: 'developer',
         countryIndeed: 'usa',
         resultsWanted: 10
       });
 
-      expect(jobs.length).toBeGreaterThanOrEqual(0);
+      // Should get jobs from working scrapers
+      expect(jobs.length).toBeGreaterThan(0);
       expect(jobs.length).toBeLessThanOrEqual(10);
-    });
+    }, 30000);
   });
 
   describe('Country Compatibility', () => {

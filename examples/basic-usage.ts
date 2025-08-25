@@ -4,9 +4,9 @@ async function basicExample() {
   console.log('Starting comprehensive job scraping example...');
 
   try {
-    // Multi-site scraping with all available scrapers
+    // Multi-site scraping - only Indeed and LinkedIn are currently working
     const jobs = await scrapeJobs({
-      siteName: ['indeed', 'linkedin', 'glassdoor', 'google', 'naukri'],
+      siteName: ['indeed', 'linkedin'], // Only these two are operational
       searchTerm: 'software engineer',
       location: 'San Francisco, CA',
       resultsWanted: 25,
@@ -39,7 +39,9 @@ async function basicExample() {
 
     // Export with enhanced options
     await jobs.toCsv('enhanced-jobs.csv', {
-      quoting: 'nonnumeric'
+      quoting: 'nonnumeric',
+      delimiter: ',',
+      headers: true
     });
     await jobs.toJson('enhanced-jobs.json', { pretty: true });
 
@@ -95,10 +97,18 @@ async function internationalExample() {
   }
 }
 
-// Run both examples
-if (require.main === module) {
-  (async () => {
+// Main function to run both examples
+async function main() {
+  try {
     await basicExample();
     await internationalExample();
-  })();
+  } catch (error) {
+    console.error('❌ Error running examples:', error);
+    process.exit(1);
+  }
+}
+
+// Run both examples
+if (require.main === module) {
+  main().catch(console.error);
 }

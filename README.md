@@ -5,7 +5,11 @@
 [![GitHub stars](https://img.shields.io/github/stars/alpharomercoma/ts-jobspy.svg)](https://github.com/alpharomercoma/ts-jobspy/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**ts-jobspy** is a TypeScript job scraping library that aggregates job postings from popular job boards. This is a complete TypeScript rewrite of the original [python-jobspy](https://pypi.org/project/python-jobspy/) package with full API compatibility.
+**ts-jobspy** is a TypeScript job scraping library that aggregates job postings from popular job boards. This is a complete TypeScript rewrite of the original [python-jobspy](https://pypi.org/project/python-jobspy/) package with near full API compatibility.
+
+## ⚠️ Current Status
+
+**Currently, only Indeed and LinkedIn scrapers are fully operational.** Other scrapers (ZipRecruiter, Glassdoor, Google, Bayt, Naukri, BDJobs) are under maintenance and may not return results reliably. We recommend using only `['indeed', 'linkedin']` for the `siteName` parameter.
 
 ## 🙏 Attribution
 
@@ -21,7 +25,8 @@ This TypeScript version maintains full API compatibility while providing type sa
 
 ## Features
 
-- 🔍 Scrapes job postings from **Indeed** and **LinkedIn** (other sites currently under maintenance)
+- 🔍 **Active Scrapers**: Indeed and LinkedIn are fully operational and tested
+- 🚧 **Maintenance Status**: ZipRecruiter, Glassdoor, Google, Bayt, Naukri, and BDJobs are under maintenance
 - 📊 Aggregates job postings in a structured format with pandas-like DataFrame functionality
 - 🌐 Proxy support with rotation to bypass blocking
 - 🔒 Fully type-safe with comprehensive TypeScript definitions
@@ -41,34 +46,92 @@ npm install ts-jobspy
 
 ## Usage
 
+### JavaScript (ES Modules)
+
+Create a file called `main.js`:
+
+```javascript
+import { scrapeJobs } from 'ts-jobspy';
+
+async function main() {
+  const jobs = await scrapeJobs({
+    siteName: ['indeed', 'linkedin'], // Only these two are currently working
+    searchTerm: 'software engineer',
+    location: 'San Francisco, CA',
+    countryIndeed: 'usa', // Required for Indeed - supports 60+ countries with autocomplete
+    resultsWanted: 20,
+    hoursOld: 72,
+
+    // linkedinFetchDescription: true, // gets more info such as description, direct job url (slower)
+    // proxies: ['208.195.175.46:65095', '208.195.175.45:65095', 'localhost'],
+  });
+
+  console.log(`Found ${jobs.length} jobs`);
+  console.log(jobs.head(3)); // Show first 3 jobs (pandas-like)
+
+  // Export to CSV (built-in functionality)
+  await jobs.toCsv('jobs.csv', {
+    quoting: 'nonnumeric',
+    delimiter: ',',
+    headers: true
+  });
+
+  // Export to JSON
+  await jobs.toJson('jobs.json', { pretty: true });
+}
+
+main().catch(console.error);
+```
+
+**Run with:**
+```bash
+node main.js
+```
+
+### TypeScript
+
+Create a file called `main.ts`:
+
 ```typescript
 import { scrapeJobs } from 'ts-jobspy';
 
-const jobs = await scrapeJobs({
-  siteName: ['indeed', 'linkedin', 'ziprecruiter'], // 'glassdoor', 'google', 'bayt', 'naukri', 'bdjobs'
-  searchTerm: 'software engineer',
-  location: 'San Francisco, CA',
-  countryIndeed: 'usa', // Required for Indeed - supports 60+ countries with autocomplete
-  resultsWanted: 20,
-  hoursOld: 72,
+async function main() {
+  const jobs = await scrapeJobs({
+    siteName: ['indeed', 'linkedin'], // Only these two are currently working
+    searchTerm: 'software engineer',
+    location: 'San Francisco, CA',
+    countryIndeed: 'usa', // Required for Indeed - supports 60+ countries with autocomplete
+    resultsWanted: 20,
+    hoursOld: 72,
 
-  // linkedinFetchDescription: true, // gets more info such as description, direct job url (slower)
-  // proxies: ['208.195.175.46:65095', '208.195.175.45:65095', 'localhost'],
-});
+    // linkedinFetchDescription: true, // gets more info such as description, direct job url (slower)
+    // proxies: ['208.195.175.46:65095', '208.195.175.45:65095', 'localhost'],
+  });
 
-console.log(`Found ${jobs.length} jobs`);
-console.log(jobs.head(3)); // Show first 3 jobs (pandas-like)
+  console.log(`Found ${jobs.length} jobs`);
+  console.log(jobs.head(3)); // Show first 3 jobs (pandas-like)
 
-// Export to CSV (built-in functionality)
-await jobs.toCsv('jobs.csv', {
-  quoting: 'nonnumeric',
-  escapeChar: '\\',
-  includeIndex: false
-});
+  // Export to CSV (built-in functionality)
+  await jobs.toCsv('jobs.csv', {
+    quoting: 'nonnumeric',
+    delimiter: ',',
+    headers: true
+  });
 
-// Export to JSON
-await jobs.toJson('jobs.json', { pretty: true });
+  // Export to JSON
+  await jobs.toJson('jobs.json', { pretty: true });
+}
+
+main().catch(console.error);
 ```
+
+**Compile and run:**
+```bash
+npm install typescript
+npx tsc main.ts --lib es2015 && node main.js
+```
+
+*Note: The `--lib es2015` flag is required to support iterators and modern JavaScript features.*
 
 ## API Reference
 
@@ -111,8 +174,11 @@ interface ScrapeJobsOptions {
 
 #### Supported Sites
 
+**✅ Currently Working:**
 - **LinkedIn**: Global search using `location` parameter
 - **Indeed**: Supports 60+ countries with strongly typed `countryIndeed` parameter (required)
+
+**🚧 Under Maintenance (may not work reliably):**
 - **ZipRecruiter**: US/Canada only, uses `location` parameter
 - **Glassdoor**: Supports major countries (requires `countryIndeed`)
 - **Google**: Global job search with advanced filtering
