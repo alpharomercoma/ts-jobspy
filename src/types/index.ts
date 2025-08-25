@@ -16,17 +16,22 @@ export enum Country {
   AUSTRALIA = 'australia',
   AUSTRIA = 'austria',
   BAHRAIN = 'bahrain',
+  BANGLADESH = 'bangladesh',
   BELGIUM = 'belgium',
+  BULGARIA = 'bulgaria',
   BRAZIL = 'brazil',
   CANADA = 'canada',
   CHILE = 'chile',
   CHINA = 'china',
   COLOMBIA = 'colombia',
   COSTA_RICA = 'costa rica',
+  CROATIA = 'croatia',
+  CYPRUS = 'cyprus',
   CZECH_REPUBLIC = 'czech republic',
   DENMARK = 'denmark',
   ECUADOR = 'ecuador',
   EGYPT = 'egypt',
+  ESTONIA = 'estonia',
   FINLAND = 'finland',
   FRANCE = 'france',
   GERMANY = 'germany',
@@ -40,8 +45,11 @@ export enum Country {
   ITALY = 'italy',
   JAPAN = 'japan',
   KUWAIT = 'kuwait',
+  LATVIA = 'latvia',
+  LITHUANIA = 'lithuania',
   LUXEMBOURG = 'luxembourg',
   MALAYSIA = 'malaysia',
+  MALTA = 'malta',
   MEXICO = 'mexico',
   MOROCCO = 'morocco',
   NETHERLANDS = 'netherlands',
@@ -59,6 +67,8 @@ export enum Country {
   ROMANIA = 'romania',
   SAUDI_ARABIA = 'saudi arabia',
   SINGAPORE = 'singapore',
+  SLOVAKIA = 'slovakia',
+  SLOVENIA = 'slovenia',
   SOUTH_AFRICA = 'south africa',
   SOUTH_KOREA = 'south korea',
   SPAIN = 'spain',
@@ -82,12 +92,25 @@ export enum Country {
 
 /**
  * Supported countries for Indeed scraping with autocomplete.
- * Derived from Country enum values plus common aliases.
+ * Provides lowercase country names for a clean API experience.
+ * Internally mapped to Country enum for type safety.
  */
-export type SupportedCountry = `${Country}` | 
+export type SupportedCountry =
+  | 'argentina' | 'australia' | 'austria' | 'bahrain' | 'bangladesh' | 'belgium'
+  | 'brazil' | 'bulgaria' | 'canada' | 'chile' | 'china' | 'colombia' | 'costa rica'
+  | 'croatia' | 'cyprus' | 'czech republic' | 'denmark' | 'ecuador' | 'egypt'
+  | 'estonia' | 'finland' | 'france' | 'germany' | 'greece' | 'hong kong'
+  | 'hungary' | 'india' | 'indonesia' | 'ireland' | 'israel' | 'italy' | 'japan'
+  | 'kuwait' | 'latvia' | 'lithuania' | 'luxembourg' | 'malaysia' | 'malta'
+  | 'mexico' | 'morocco' | 'netherlands' | 'new zealand' | 'nigeria' | 'norway'
+  | 'oman' | 'pakistan' | 'panama' | 'peru' | 'philippines' | 'poland' | 'portugal'
+  | 'qatar' | 'romania' | 'saudi arabia' | 'singapore' | 'slovakia' | 'slovenia'
+  | 'south africa' | 'south korea' | 'spain' | 'sweden' | 'switzerland' | 'taiwan'
+  | 'thailand' | 'turkey' | 'ukraine' | 'united arab emirates' | 'uk' | 'usa'
+  | 'uruguay' | 'venezuela' | 'vietnam'
   // Common aliases
-  'czechia' | 'türkiye' | 'korea' | 'uae' | 'emirates' | 'nz' | 'hk' |
-  'ksa' | 'za' | 'united kingdom' | 'britain' | 'us' | 'united states' | 'america';
+  | 'czechia' | 'türkiye' | 'korea' | 'uae' | 'emirates' | 'nz' | 'hk'
+  | 'ksa' | 'za' | 'britain' | 'united kingdom' | 'us' | 'united states' | 'america';
 
 export enum CompensationInterval {
   YEARLY = 'yearly',
@@ -145,14 +168,29 @@ export interface Compensation {
 export interface ScrapeJobsOptions {
   siteName?: SiteName | SiteName[];
   searchTerm?: string;
+  googleSearchTerm?: string;
   location?: string;
+  distance?: number;
+  isRemote?: boolean;
+  jobType?: string;
+  easyApply?: boolean;
   resultsWanted?: number;
   /**
    * Country for Indeed scraping. Required when using Indeed.
    * Provides autocomplete for all supported countries.
-   * @example 'usa' | 'uk' | 'canada' | 'germany' | 'france' | 'australia'
+   * @example Country.USA | Country.UK | Country.CANADA | 'usa' | 'uk' | 'canada'
    */
   countryIndeed?: SupportedCountry;
+  proxies?: string[] | string;
+  caCert?: string;
+  userAgent?: string;
+  descriptionFormat?: DescriptionFormat;
+  linkedinFetchDescription?: boolean;
+  linkedinCompanyIds?: number[];
+  offset?: number;
+  hoursOld?: number;
+  enforceAnnualSalary?: boolean;
+  verbose?: number;
 }
 
 export interface JobPost {

@@ -31,31 +31,36 @@ export class CountryHelper {
    */
   static stringToCountry(countryString: string): Country {
     const normalized = countryString.toLowerCase().trim();
-    
-    // Direct mappings
+
+    // Direct mappings for all supported countries
     const countryMap: Record<string, Country> = {
+      // Main country names (lowercase)
       'argentina': Country.ARGENTINA,
       'australia': Country.AUSTRALIA,
       'austria': Country.AUSTRIA,
       'bahrain': Country.BAHRAIN,
+      'bangladesh': Country.BANGLADESH,
       'belgium': Country.BELGIUM,
       'brazil': Country.BRAZIL,
+      'bulgaria': Country.BULGARIA,
       'canada': Country.CANADA,
       'chile': Country.CHILE,
       'china': Country.CHINA,
       'colombia': Country.COLOMBIA,
       'costa rica': Country.COSTA_RICA,
+      'croatia': Country.CROATIA,
+      'cyprus': Country.CYPRUS,
       'czech republic': Country.CZECH_REPUBLIC,
-      'czechia': Country.CZECH_REPUBLIC,
       'denmark': Country.DENMARK,
       'ecuador': Country.ECUADOR,
       'egypt': Country.EGYPT,
+      'estonia': Country.ESTONIA,
       'finland': Country.FINLAND,
       'france': Country.FRANCE,
       'germany': Country.GERMANY,
+
       'greece': Country.GREECE,
       'hong kong': Country.HONG_KONG,
-      'hk': Country.HONG_KONG,
       'hungary': Country.HUNGARY,
       'india': Country.INDIA,
       'indonesia': Country.INDONESIA,
@@ -63,14 +68,18 @@ export class CountryHelper {
       'israel': Country.ISRAEL,
       'italy': Country.ITALY,
       'japan': Country.JAPAN,
+
       'kuwait': Country.KUWAIT,
+      'latvia': Country.LATVIA,
+
+      'lithuania': Country.LITHUANIA,
       'luxembourg': Country.LUXEMBOURG,
       'malaysia': Country.MALAYSIA,
+      'malta': Country.MALTA,
       'mexico': Country.MEXICO,
       'morocco': Country.MOROCCO,
       'netherlands': Country.NETHERLANDS,
       'new zealand': Country.NEW_ZEALAND,
-      'nz': Country.NEW_ZEALAND,
       'nigeria': Country.NIGERIA,
       'norway': Country.NORWAY,
       'oman': Country.OMAN,
@@ -83,40 +92,48 @@ export class CountryHelper {
       'qatar': Country.QATAR,
       'romania': Country.ROMANIA,
       'saudi arabia': Country.SAUDI_ARABIA,
-      'ksa': Country.SAUDI_ARABIA,
       'singapore': Country.SINGAPORE,
+      'slovakia': Country.SLOVAKIA,
+      'slovenia': Country.SLOVENIA,
       'south africa': Country.SOUTH_AFRICA,
-      'za': Country.SOUTH_AFRICA,
       'south korea': Country.SOUTH_KOREA,
-      'korea': Country.SOUTH_KOREA,
       'spain': Country.SPAIN,
+
       'sweden': Country.SWEDEN,
       'switzerland': Country.SWITZERLAND,
       'taiwan': Country.TAIWAN,
       'thailand': Country.THAILAND,
       'turkey': Country.TURKEY,
-      'türkiye': Country.TURKEY,
       'ukraine': Country.UKRAINE,
       'united arab emirates': Country.UNITED_ARAB_EMIRATES,
-      'uae': Country.UNITED_ARAB_EMIRATES,
-      'emirates': Country.UNITED_ARAB_EMIRATES,
       'uk': Country.UK,
       'united kingdom': Country.UK,
-      'britain': Country.UK,
       'usa': Country.USA,
-      'us': Country.USA,
-      'united states': Country.USA,
-      'america': Country.USA,
       'uruguay': Country.URUGUAY,
       'venezuela': Country.VENEZUELA,
       'vietnam': Country.VIETNAM,
+
+      // Common aliases
+      'czechia': Country.CZECH_REPUBLIC,
+      'türkiye': Country.TURKEY,
+      'korea': Country.SOUTH_KOREA,
+      'uae': Country.UNITED_ARAB_EMIRATES,
+      'emirates': Country.UNITED_ARAB_EMIRATES,
+      'nz': Country.NEW_ZEALAND,
+      'hk': Country.HONG_KONG,
+      'ksa': Country.SAUDI_ARABIA,
+      'za': Country.SOUTH_AFRICA,
+      'britain': Country.UK,
+      'us': Country.USA,
+      'united states': Country.USA,
+      'america': Country.USA,
     };
 
     const country = countryMap[normalized];
     if (!country) {
       throw new Error(`Unsupported country: ${countryString}. Please use one of the supported countries.`);
     }
-    
+
     return country;
   }
 
@@ -147,18 +164,23 @@ export class CountryHelper {
     [Country.UK]: { indeed: 'uk:gb', glassdoor: 'co.uk' },
     [Country.USA]: { indeed: 'www:us', glassdoor: 'com' },
     [Country.VIETNAM]: { indeed: 'vn', glassdoor: 'com' },
-    
+
     // Countries with Indeed only support
     [Country.ARGENTINA]: { indeed: 'ar' },
     [Country.BAHRAIN]: { indeed: 'bh' },
+    [Country.BANGLADESH]: { indeed: 'bd' },
+    [Country.BULGARIA]: { indeed: 'bg' },
     [Country.CHILE]: { indeed: 'cl' },
     [Country.CHINA]: { indeed: 'cn' },
     [Country.COLOMBIA]: { indeed: 'co' },
     [Country.COSTA_RICA]: { indeed: 'cr' },
+    [Country.CROATIA]: { indeed: 'hr' },
+    [Country.CYPRUS]: { indeed: 'cy' },
     [Country.CZECH_REPUBLIC]: { indeed: 'cz' },
     [Country.DENMARK]: { indeed: 'dk' },
     [Country.ECUADOR]: { indeed: 'ec' },
     [Country.EGYPT]: { indeed: 'eg' },
+    [Country.ESTONIA]: { indeed: 'ee' },
     [Country.FINLAND]: { indeed: 'fi' },
     [Country.GREECE]: { indeed: 'gr' },
     [Country.HUNGARY]: { indeed: 'hu' },
@@ -166,8 +188,11 @@ export class CountryHelper {
     [Country.ISRAEL]: { indeed: 'il' },
     [Country.JAPAN]: { indeed: 'jp' },
     [Country.KUWAIT]: { indeed: 'kw' },
+    [Country.LATVIA]: { indeed: 'lv' },
+    [Country.LITHUANIA]: { indeed: 'lt' },
     [Country.LUXEMBOURG]: { indeed: 'lu' },
     [Country.MALAYSIA]: { indeed: 'malaysia:my' },
+    [Country.MALTA]: { indeed: 'malta:mt' },
     [Country.MOROCCO]: { indeed: 'ma' },
     [Country.NIGERIA]: { indeed: 'ng' },
     [Country.NORWAY]: { indeed: 'no' },
@@ -181,6 +206,8 @@ export class CountryHelper {
     [Country.QATAR]: { indeed: 'qa' },
     [Country.ROMANIA]: { indeed: 'ro' },
     [Country.SAUDI_ARABIA]: { indeed: 'sa' },
+    [Country.SLOVAKIA]: { indeed: 'sk' },
+    [Country.SLOVENIA]: { indeed: 'sl' },
     [Country.SOUTH_AFRICA]: { indeed: 'za' },
     [Country.SOUTH_KOREA]: { indeed: 'kr' },
     [Country.SWEDEN]: { indeed: 'se' },
@@ -191,7 +218,7 @@ export class CountryHelper {
     [Country.UNITED_ARAB_EMIRATES]: { indeed: 'ae' },
     [Country.URUGUAY]: { indeed: 'uy' },
     [Country.VENEZUELA]: { indeed: 've' },
-    
+
     // Internal use for specific scrapers
     [Country.US_CANADA]: { indeed: 'www' },
     [Country.WORLDWIDE]: { indeed: 'www' },
@@ -268,12 +295,12 @@ export class CountryHelper {
       'us': Country.USA,
       'united states': Country.USA,
       'america': Country.USA,
-      
+
       // UK alternatives
       'united kingdom': Country.UK,
       'great britain': Country.UK,
       'britain': Country.UK,
-      
+
       // Other common alternatives (only for supported countries)
       'czechia': Country.CZECH_REPUBLIC,
       'türkiye': Country.TURKEY,
@@ -300,7 +327,7 @@ export class CountryHelper {
     const validCountries = Object.values(Country)
       .filter(c => c !== Country.US_CANADA && c !== Country.WORLDWIDE)
       .sort();
-    
+
     throw new Error(
       `Invalid country string: '${countryStr}'. Valid countries include: ${validCountries.slice(0, 10).join(', ')}... (and ${validCountries.length - 10} more). Use Country enum values or common alternative names.`
     );

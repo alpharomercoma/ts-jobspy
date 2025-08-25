@@ -48,7 +48,7 @@ const jobs = await scrapeJobs({
   siteName: ['indeed', 'linkedin', 'ziprecruiter'], // 'glassdoor', 'google', 'bayt', 'naukri', 'bdjobs'
   searchTerm: 'software engineer',
   location: 'San Francisco, CA',
-  countryIndeed: 'USA', // Required for Indeed - supports 60+ countries
+  countryIndeed: 'usa', // Required for Indeed - supports 60+ countries with autocomplete
   resultsWanted: 20,
   hoursOld: 72,
 
@@ -143,28 +143,31 @@ The `countryIndeed` parameter is **required** for Indeed and used for Glassdoor.
 | United Arab Emirates | UK ⭐         | USA ⭐      | Uruguay        |
 | Venezuela            | Vietnam ⭐    |            |                |
 
-Notes:
-- Use `location` to further narrow down by city/state when needed.
-- Aliases are supported for convenience (e.g., `'us'`, `'united states'`, `'america'`, `'uk'`, `'britain'`, `'czechia'`, `'hk'`, `'nz'`, `'uae'`, `'ksa'`, `'za'`).
+**TypeScript Integration:**
+- Your IDE provides full autocomplete for all supported country names
+- Type-safe development with IntelliSense showing all valid options
+- Use lowercase country names (e.g., `'usa'`, `'germany'`, `'united kingdom'`)
+- Common aliases supported: `'us'` → `'usa'`, `'uk'` → `'united kingdom'`, `'czechia'` → `'czech republic'`
+- Use `location` parameter to further narrow down by city/state
 
 ```typescript
-// Using Country enum (recommended for type safety)
-import { Country } from 'ts-jobspy';
+// Using country names (with autocomplete for type safety)
+import { scrapeJobs } from 'ts-jobspy';
 
 const jobs = await scrapeJobs({
-  site_name: ['indeed'],
-  countryIndeed: Country.GERMANY, // Strongly typed
-  search_term: 'software engineer',
+  siteName: ['indeed'],
+  countryIndeed: 'germany', // Strongly typed with autocomplete
+  searchTerm: 'software engineer',
   location: 'Berlin'
 });
 
 // Error handling for unsupported countries
 try {
   const jobs = await scrapeJobs({
-    site_name: ['indeed'],
-    search_term: 'software engineer',
+    siteName: ['indeed'],
+    searchTerm: 'software engineer',
     countryIndeed: 'russia', // Not supported - will throw error
-    results_wanted: 10
+    resultsWanted: 10
   });
 } catch (error) {
   console.error('Error:', error.message);

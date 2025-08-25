@@ -10,6 +10,7 @@ async function basicExample() {
       searchTerm: 'software engineer',
       location: 'San Francisco, CA',
       resultsWanted: 25,
+      countryIndeed: 'usa',
       hoursOld: 72,
       jobType: 'fulltime',
       isRemote: false,
@@ -17,7 +18,7 @@ async function basicExample() {
     });
 
     console.log(`\nFound ${jobs.length} jobs from multiple sites:`);
-    
+
     // Display first few jobs with enhanced data
     console.log('\n📋 Sample Jobs:');
     jobs.head(3).forEach((job, index) => {
@@ -27,21 +28,21 @@ async function basicExample() {
       console.log(`   💰 ${job.compensation?.minAmount ? `$${job.compensation.minAmount}-${job.compensation.maxAmount} ${job.compensation.interval}` : 'Not specified'}`);
       console.log(`   🏠 Remote: ${job.isRemote ? 'Yes' : 'No'}`);
     });
-    
-    // Filter and analyze data
+
+    // Filter and analyze data using JobDataFrame methods
     const remoteJobs = jobs.filter(job => job.isRemote);
     const companyCounts = jobs.groupBy('companyName');
-    
+
     console.log(`\n📊 Analysis:`);
     console.log(`   Remote jobs: ${remoteJobs.length}/${jobs.length}`);
     console.log(`   Unique companies: ${Object.keys(companyCounts).length}`);
-    
+
     // Export with enhanced options
-    await jobs.toCsv('enhanced-jobs.csv', { 
+    await jobs.toCsv('enhanced-jobs.csv', {
       quoting: 'nonnumeric'
     });
     await jobs.toJson('enhanced-jobs.json', { pretty: true });
-    
+
     console.log('\n✅ Files exported: enhanced-jobs.csv, enhanced-jobs.json');
 
   } catch (error) {
@@ -60,18 +61,21 @@ async function internationalExample() {
         searchTerm: 'software developer',
         location: 'Mumbai',
         resultsWanted: 10,
+        countryIndeed: 'india',
       }),
       scrapeJobs({
         siteName: 'bayt',
         searchTerm: 'developer',
         location: 'Dubai',
         resultsWanted: 10,
+        countryIndeed: 'united arab emirates',
       }),
       scrapeJobs({
         siteName: 'bdjobs',
         searchTerm: 'programmer',
         location: 'Dhaka',
         resultsWanted: 10,
+        countryIndeed: 'bangladesh',
       })
     ]);
 
