@@ -14,7 +14,6 @@ async function basicExample() {
       hoursOld: 72,
       jobType: 'fulltime',
       isRemote: false,
-      verbose: 2,
     });
 
     console.log(`\nFound ${jobs.length} jobs from multiple sites:`);
