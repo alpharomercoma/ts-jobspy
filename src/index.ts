@@ -1,10 +1,13 @@
 /**
  * ts-jobspy - TypeScript Job Scraper
  *
- * A TypeScript port of python-jobspy for scraping job postings from
+ * A TypeScript rewrite of python-jobspy for scraping job postings from
  * LinkedIn, Indeed, Glassdoor, ZipRecruiter, Google, Bayt, Naukri, and BDJobs.
  *
- * Original: https://github.com/speedyapply/JobSpy
+ * TypeScript rewrite author:
+ * - Alpha Romer Coma (alpharomercoma@proton.me)
+ *
+ * Original python-jobspy: https://github.com/speedyapply/JobSpy
  * Original authors:
  * - Cullen Watson (cullen@cullenwatson.com)
  * - Zachary Hampton (zachary@zacharysproducts.com)
