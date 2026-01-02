@@ -2,7 +2,7 @@
 
 **ts-jobspy** is a TypeScript job scraping library that aggregates job postings from popular job boards with one tool.
 
-This is a TypeScript port of [python-jobspy](https://github.com/speedyapply/JobSpy).
+This is a TypeScript rewrite of [python-jobspy](https://github.com/speedyapply/JobSpy) by Alpha Romer Coma.
 
 ## Features
 
@@ -238,9 +238,12 @@ A: Google Jobs requires specific syntax. Search on Google Jobs in your browser f
 
 ## Credits
 
-This package is a TypeScript port of [python-jobspy](https://github.com/speedyapply/JobSpy).
+This package is a TypeScript rewrite of [python-jobspy](https://github.com/speedyapply/JobSpy).
 
-**Original Authors:**
+**TypeScript Rewrite Author:**
+- Alpha Romer Coma (alpharomercoma@proton.me)
+
+**Original python-jobspy Authors:**
 - Cullen Watson (cullen@cullenwatson.com)
 - Zachary Hampton (zachary@zacharysproducts.com)
 
