@@ -74,10 +74,13 @@ export const JOB_TYPE_VARIATIONS: Record<JobType, string[]> = {
 
 /**
  * Supported job board sites
+ * Note: Only LinkedIn and Indeed are currently working.
+ * Other scrapers are under maintenance.
  */
 export enum Site {
   LINKEDIN = 'linkedin',
   INDEED = 'indeed',
+  // Under maintenance
   ZIP_RECRUITER = 'zip_recruiter',
   GLASSDOOR = 'glassdoor',
   GOOGLE = 'google',
@@ -85,6 +88,12 @@ export enum Site {
   NAUKRI = 'naukri',
   BDJOBS = 'bdjobs',
 }
+
+/**
+ * Currently supported site names for scraping
+ * Only LinkedIn and Indeed are working. Other scrapers are under maintenance.
+ */
+export type SupportedSiteName = 'linkedin' | 'indeed' | Site.LINKEDIN | Site.INDEED;
 
 /**
  * Salary source enumeration
@@ -460,8 +469,10 @@ export const DEFAULT_SCRAPER_INPUT: Partial<ScraperInput> = {
  * Options for the main scrapeJobs function
  */
 export interface ScrapeJobsOptions {
-  siteName?: string | string[] | Site | Site[];
+  /** Sites to scrape. Currently only 'linkedin' and 'indeed' are supported. */
+  siteName?: SupportedSiteName | SupportedSiteName[];
   searchTerm?: string;
+  /** @deprecated Google scraper is under maintenance */
   googleSearchTerm?: string;
   location?: string;
   distance?: number;

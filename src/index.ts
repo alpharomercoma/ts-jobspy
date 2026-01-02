@@ -14,73 +14,60 @@
  */
 
 import {
-  Site,
-  JobType,
-  Country,
-  JobPost,
-  JobResponse,
-  ScraperInput,
-  ScrapeJobsOptions,
-  Scraper,
   Compensation,
   CompensationInterval,
-  Location,
-  SalarySource,
+  Country,
   DescriptionFormat,
+  DESIRED_ORDER,
   displayLocation,
   getCountryFromString,
-  DESIRED_ORDER,
+  JobPost,
+  JobResponse,
+  JobType,
+  Location,
+  SalarySource,
+  ScrapeJobsOptions,
+  Scraper,
+  ScraperInput,
+  Site,
+  SupportedSiteName,
 } from './model';
 
 import {
-  setLoggerLevel,
-  extractSalary,
+  convertToAnnual,
   createLogger,
+  extractSalary,
   getEnumFromValue,
   mapStrToSite,
-  convertToAnnual,
+  setLoggerLevel,
 } from './util';
 
 // Import scrapers
-import { LinkedIn } from './linkedin';
-import { Indeed } from './indeed';
-import { ZipRecruiter } from './ziprecruiter';
+import { BaytScraper } from './bayt';
+import { BDJobs } from './bdjobs';
 import { Glassdoor } from './glassdoor';
 import { Google } from './google';
-import { BaytScraper } from './bayt';
+import { Indeed } from './indeed';
+import { LinkedIn } from './linkedin';
 import { Naukri } from './naukri';
-import { BDJobs } from './bdjobs';
+import { ZipRecruiter } from './ziprecruiter';
 
 // Export all types and classes
 export {
-  Site,
-  JobType,
-  Country,
-  CompensationInterval,
-  SalarySource,
-  DescriptionFormat,
-  displayLocation,
-  getCountryFromString,
-  DESIRED_ORDER,
-  LinkedIn,
-  Indeed,
-  ZipRecruiter,
-  Glassdoor,
-  Google,
-  BaytScraper,
-  Naukri,
-  BDJobs,
+  BaytScraper, BDJobs, CompensationInterval, Country, DescriptionFormat, DESIRED_ORDER, displayLocation,
+  getCountryFromString, Glassdoor,
+  Google, Indeed, JobType,
+  // Currently working scrapers
+  LinkedIn, Naukri, SalarySource, Site,
+  // Under maintenance - still exported for future use
+  ZipRecruiter
 };
 
 // Export types separately
 export type {
-  JobPost,
-  JobResponse,
-  ScraperInput,
-  ScrapeJobsOptions,
-  Scraper,
-  Compensation,
-  Location,
+  Compensation, JobPost,
+  JobResponse, Location, ScrapeJobsOptions,
+  Scraper, ScraperInput, SupportedSiteName
 };
 
 // Export exceptions
@@ -88,12 +75,8 @@ export * from './exception';
 
 // Export utilities
 export {
-  setLoggerLevel,
-  extractSalary,
-  createLogger,
-  getEnumFromValue,
-  mapStrToSite,
-  convertToAnnual,
+  convertToAnnual, createLogger, extractSalary, getEnumFromValue,
+  mapStrToSite, setLoggerLevel
 } from './util';
 
 const log = createLogger('Main');
@@ -101,9 +84,15 @@ const log = createLogger('Main');
 /**
  * Scraper mapping
  */
+/**
+ * Scraper mapping
+ * Note: Only LinkedIn and Indeed are currently working.
+ * Other scrapers are under maintenance and may not function properly.
+ */
 const SCRAPER_MAPPING: Record<Site, new (options: { proxies?: string[]; caCert?: string; userAgent?: string }) => Scraper> = {
   [Site.LINKEDIN]: LinkedIn,
   [Site.INDEED]: Indeed,
+  // Under maintenance
   [Site.ZIP_RECRUITER]: ZipRecruiter,
   [Site.GLASSDOOR]: Glassdoor,
   [Site.GOOGLE]: Google,
