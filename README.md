@@ -18,7 +18,7 @@ This is a TypeScript rewrite of [python-jobspy](https://github.com/speedyapply/J
 npm install ts-jobspy
 ```
 
-**Node.js version >= 18.0.0 required**
+**Node.js version >= 20.0.0 required**
 
 ## Quick Start
 
