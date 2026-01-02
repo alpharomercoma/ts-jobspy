@@ -15,6 +15,10 @@ This is a TypeScript port of [python-jobspy](https://github.com/speedyapply/JobS
 
 ```bash
 npm install ts-jobspy
+# or
+yarn add ts-jobspy
+# or
+pnpm add ts-jobspy
 ```
 
 _Node.js version >= [20.0.0](https://nodejs.org/) required_
@@ -39,6 +43,16 @@ const jobs = await scrapeJobs({
 console.log(`Found ${jobs.length} jobs`);
 fs.writeFileSync('jobs.json', JSON.stringify(jobs, null, 2));
 ```
+
+### Example Output
+
+| site     | company | title                                                            | location          | datePosted | description                                                                      | jobUrl                                        | jobUrlDirect                                       | salarySource | interval | minAmount | maxAmount | currency | isRemote |
+|----------|---------|------------------------------------------------------------------|-------------------|------------|----------------------------------------------------------------------------------|-----------------------------------------------|----------------------------------------------------|--------------|----------|-----------|-----------|----------|----------|
+| indeed   | Adobe   | Software Development Engineer                                    | San Jose, CA, US  | 2026-01-02 | Our Company <br>Changing the world through digital experiences...         | https://www.indeed.com/viewjob?jk=17cf2...    | https://careers.adobe.com/us/en/job/ADOBUSR1633... | direct_data  | yearly   | 139000    | 257550    | USD      | false    |
+| linkedin | Google  | Software Engineer, Infrastructure, User Personalization          | Mountain View, CA | 2025-12-31 | Minimum qualifications:  Bachelor's degree ...         | https://www.linkedin.com/jobs/view/4326...    | https://careers.google.com/jobs/results/10592...   | description  | yearly   | 141000    | 202000    | USD      | false    |
+| linkedin | Twitch  | Software Development Engineer                                    | San Francisco, CA | 2026-01-01 | About Us  <br> Twitch is the world's biggest live streaming service...  | https://www.linkedin.com/jobs/view/4319...    | null                                               | description  | yearly   | 99500     | 200000    | USD      | false    |
+| linkedin | Netflix | Full Stack Software Engineer (L5), Studio Orchestration Platform | Los Gatos, CA     | 2026-01-01 | Netflix is one of the world's leading entertainment services...                     | https://www.linkedin.com/jobs/view/4349506141 | null                                               | null         | null     | null      | null      | null     | false    |
+| linkedin | Meta    | Software Engineer, Machine Learning                              | Sunnyvale, CA     | null       | Meta is seeking talented engineers to join our teams in building cutting-edge... | https://www.linkedin.com/jobs/view/4254...    | https://jsv3.recruitics.com/redirect?rx_cid=...    | null         | null     | null      | null      | null     | false    |
 
 ### Parameters for `scrapeJobs()`
 
