@@ -69,6 +69,42 @@ This document tracks known bugs and limitations in both the original python-jobs
 - Rotating proxy session for load balancing
 - Proxy agent per-request configuration
 
+### TLS Fingerprinting Difference
+- **Issue**: Python version uses `tls_client` which spoofs browser TLS fingerprints
+- **Impact**: Some sites (Glassdoor, ZipRecruiter, Bayt) may return 403 errors with standard axios requests
+- **Mitigation**: Use proxies with residential IPs or consider TLS fingerprinting libraries for Node.js
+- **Affected scrapers**: Glassdoor, ZipRecruiter, Bayt (may need proxies to work reliably)
+
+## Bugs Fixed in v1.0.0 Audit
+
+### 1. Indeed Type Casting Bug (Fixed)
+- **Location**: `src/indeed/index.ts` line 119
+- **Issue**: Incorrect type casting `Site.INDEED as unknown as Country`
+- **Fix**: Changed to `input.country ?? Country.USA`
+
+### 2. Glassdoor Type Casting Bug (Fixed)
+- **Location**: `src/glassdoor/index.ts` line 106
+- **Issue**: Incorrect type casting `Site.GLASSDOOR as unknown as Country`
+- **Fix**: Changed to `input.country ?? Country.USA`
+
+### 3. verbose Default Mismatch (Fixed)
+- **Location**: `src/index.ts` line 176
+- **Issue**: TypeScript defaulted to `verbose=2` while Python defaults to `verbose=0`
+- **Fix**: Changed default from `2` to `0` to match Python behavior
+
+## Scraper Test Results (2026-01-02)
+
+| Scraper | Status | Notes |
+|---------|--------|-------|
+| LinkedIn | ✅ Working | Returns jobs successfully |
+| Indeed | ✅ Working | Returns jobs successfully |
+| Naukri | ✅ Working | Returns jobs with India-specific fields |
+| Google | ⚠️ Partial | May return 0 results due to bot detection |
+| Glassdoor | ❌ Blocked | Returns 403 (requires proxies/TLS spoofing) |
+| ZipRecruiter | ❌ Blocked | Returns 403 (requires proxies/TLS spoofing) |
+| Bayt | ❌ Blocked | Returns 403 (requires proxies/TLS spoofing) |
+| BDJobs | ⚠️ Partial | May need selector updates for site changes |
+
 ## Recommendations
 
 1. **Always use proxies for LinkedIn** - Rate limiting is aggressive

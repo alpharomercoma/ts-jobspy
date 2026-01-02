@@ -137,5 +137,56 @@ describe('Integration Tests', () => {
         expect(jobs[0].site).toBe('glassdoor');
       }
     });
+
+    it.skip('should scrape Bayt', async () => {
+      const jobs = await scrapeJobs({
+        siteName: Site.BAYT,
+        searchTerm: 'software engineer',
+        resultsWanted: 5,
+        verbose: 0,
+      });
+
+      expect(jobs).toBeDefined();
+      if (jobs.length > 0) {
+        expect(jobs[0].site).toBe('bayt');
+        expect(jobs[0]).toHaveProperty('title');
+        expect(jobs[0]).toHaveProperty('jobUrl');
+      }
+    });
+
+    it.skip('should scrape Naukri', async () => {
+      const jobs = await scrapeJobs({
+        siteName: Site.NAUKRI,
+        searchTerm: 'software engineer',
+        resultsWanted: 5,
+        verbose: 0,
+      });
+
+      expect(jobs).toBeDefined();
+      if (jobs.length > 0) {
+        expect(jobs[0].site).toBe('naukri');
+        expect(jobs[0]).toHaveProperty('title');
+        expect(jobs[0]).toHaveProperty('jobUrl');
+        // Naukri-specific fields
+        expect(jobs[0]).toHaveProperty('skills');
+        expect(jobs[0]).toHaveProperty('experienceRange');
+      }
+    });
+
+    it.skip('should scrape BDJobs', async () => {
+      const jobs = await scrapeJobs({
+        siteName: Site.BDJOBS,
+        searchTerm: 'software engineer',
+        resultsWanted: 5,
+        verbose: 0,
+      });
+
+      expect(jobs).toBeDefined();
+      if (jobs.length > 0) {
+        expect(jobs[0].site).toBe('bdjobs');
+        expect(jobs[0]).toHaveProperty('title');
+        expect(jobs[0]).toHaveProperty('jobUrl');
+      }
+    });
   });
 });

@@ -173,7 +173,7 @@ export async function scrapeJobs(options: ScrapeJobsOptions = {}): Promise<JobDa
     offset = 0,
     hoursOld,
     enforceAnnualSalary = false,
-    verbose = 2,
+    verbose = 0,
     userAgent,
   } = options;
 

@@ -9,7 +9,7 @@ import { JOB_SELECTORS } from './constant';
 /**
  * Parse location text into a Location object
  */
-export function parseLocation(locationText: string, country = 'bangladesh'): Location {
+export function parseLocation(locationText: string, _country = 'bangladesh'): Location {
   const parts = locationText.split(',');
   if (parts.length >= 2) {
     return {

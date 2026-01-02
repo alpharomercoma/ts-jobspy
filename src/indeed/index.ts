@@ -13,6 +13,7 @@ import {
   ScraperInput,
   Site,
   JobType,
+  Country,
   DescriptionFormat,
   Scraper,
   getIndeedDomainValue,
@@ -116,7 +117,7 @@ export class Indeed implements Scraper {
     });
 
     const { domain, apiCode } = getIndeedDomainValue(
-      input.country ?? Site.INDEED as unknown as import('../model').Country
+      input.country ?? Country.USA
     );
     this.apiCountryCode = apiCode;
     this.baseUrl = `https://${domain}.indeed.com`;

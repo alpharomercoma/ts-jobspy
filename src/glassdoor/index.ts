@@ -11,6 +11,7 @@ import {
   JobResponse,
   ScraperInput,
   Site,
+  Country,
   DescriptionFormat,
   Scraper,
   getGlassdoorUrl,
@@ -103,7 +104,7 @@ export class Glassdoor implements Scraper {
     this.seenUrls.clear();
 
     try {
-      this.baseUrl = getGlassdoorUrl(input.country ?? Site.GLASSDOOR as unknown as import('../model').Country);
+      this.baseUrl = getGlassdoorUrl(input.country ?? Country.USA);
     } catch {
       this.baseUrl = 'https://www.glassdoor.com/';
     }

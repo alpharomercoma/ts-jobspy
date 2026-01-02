@@ -43,12 +43,16 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-org/ts-jobspy"
+    "url": "git+https://github.com/speedyapply/ts-jobspy.git"
   },
   "bugs": {
-    "url": "https://github.com/your-org/ts-jobspy/issues"
+    "url": "https://github.com/speedyapply/ts-jobspy/issues"
   },
-  "homepage": "https://github.com/your-org/ts-jobspy#readme",
+  "homepage": "https://github.com/speedyapply/ts-jobspy#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "engines": {
     "node": ">=18.0.0"
   },

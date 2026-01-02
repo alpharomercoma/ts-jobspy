@@ -66,7 +66,7 @@ Main function to scrape jobs from multiple job boards concurrently.
 | `offset` | `number` | `0` | Start offset for pagination |
 | `hoursOld` | `number` | - | Filter jobs posted within hours |
 | `enforceAnnualSalary` | `boolean` | `false` | Convert salaries to annual |
-| `verbose` | `number` | `2` | Log level: 0=error, 1=warning, 2=info |
+| `verbose` | `number` | `0` | Log level: 0=error, 1=warning, 2=info |
 | `userAgent` | `string` | - | Custom user agent |
 
 #### Returns

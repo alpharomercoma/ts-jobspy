@@ -3,7 +3,6 @@
  */
 
 import { JobType, Location } from '../model';
-import { getEnumFromJobType } from '../util';
 
 /**
  * Parse job type from description
