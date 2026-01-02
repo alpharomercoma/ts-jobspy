@@ -1,7 +1,7 @@
 {
   "name": "ts-jobspy",
-  "version": "1.0.0",
-  "description": "TypeScript job scraper for LinkedIn, Indeed, Glassdoor, ZipRecruiter, Google, Bayt, Naukri & BDJobs - A port of python-jobspy",
+  "version": "2.0.0",
+  "description": "TypeScript job scraper for LinkedIn, Indeed, Glassdoor, ZipRecruiter, Google, Bayt, Naukri & BDJobs - A TypeScript rewrite of python-jobspy by Alpha Romer Coma",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -39,16 +39,20 @@
     "web-scraping",
     "typescript"
   ],
-  "author": "ts-jobspy contributors",
+  "author": "Alpha Romer Coma <alpharomercoma@proton.me>",
+  "contributors": [
+    "Cullen Watson <cullen@cullenwatson.com>",
+    "Zachary Hampton <zachary@zacharysproducts.com>"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/speedyapply/ts-jobspy.git"
+    "url": "git+https://github.com/alpharomercoma/ts-jobspy.git"
   },
   "bugs": {
-    "url": "https://github.com/speedyapply/ts-jobspy/issues"
+    "url": "https://github.com/alpharomercoma/ts-jobspy/issues"
   },
-  "homepage": "https://github.com/speedyapply/ts-jobspy#readme",
+  "homepage": "https://github.com/alpharomercoma/ts-jobspy#readme",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
