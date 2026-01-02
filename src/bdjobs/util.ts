@@ -3,7 +3,8 @@
  */
 
 import * as cheerio from 'cheerio';
-import { Location, Country } from '../model';
+import type { AnyNode } from 'domhandler';
+import { Country, Location } from '../model';
 import { JOB_SELECTORS } from './constant';
 
 /**
@@ -52,7 +53,7 @@ export function parseDate(dateText: string): Date | null {
 /**
  * Find job listing elements in the HTML
  */
-export function findJobListings($: cheerio.CheerioAPI): cheerio.Element[] {
+export function findJobListings($: cheerio.CheerioAPI): AnyNode[] {
   // Try different selectors
   for (const selector of JOB_SELECTORS) {
     const elements = $(selector).toArray();

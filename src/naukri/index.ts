@@ -7,25 +7,25 @@
 
 import { AxiosInstance } from 'axios';
 import {
-  JobPost,
-  JobResponse,
-  Location,
-  ScraperInput,
-  Site,
-  Country,
-  Compensation,
-  DescriptionFormat,
-  Scraper,
+    Compensation,
+    Country,
+    DescriptionFormat,
+    JobPost,
+    JobResponse,
+    Location,
+    Scraper,
+    ScraperInput,
+    Site,
 } from '../model';
 import {
-  createSession,
-  createLogger,
-  randomDelay,
-  markdownConverter,
-  extractEmailsFromText,
+    createLogger,
+    createSession,
+    extractEmailsFromText,
+    markdownConverter,
+    randomDelay,
 } from '../util';
 import { HEADERS } from './constant';
-import { parseJobType, parseCompanyIndustry, isJobRemote } from './util';
+import { isJobRemote, parseCompanyIndustry, parseJobType } from './util';
 
 const log = createLogger('Naukri');
 
