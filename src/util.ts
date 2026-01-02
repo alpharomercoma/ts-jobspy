@@ -46,24 +46,28 @@ export class Logger {
 
   error(message: string): void {
     if (globalLogLevel >= LogLevel.ERROR) {
+      // eslint-disable-next-line no-console
       console.error(this.formatMessage('ERROR', message));
     }
   }
 
   warning(message: string): void {
     if (globalLogLevel >= LogLevel.WARNING) {
+      // eslint-disable-next-line no-console
       console.warn(this.formatMessage('WARNING', message));
     }
   }
 
   info(message: string): void {
     if (globalLogLevel >= LogLevel.INFO) {
+      // eslint-disable-next-line no-console
       console.info(this.formatMessage('INFO', message));
     }
   }
 
   debug(message: string): void {
     if (globalLogLevel >= LogLevel.DEBUG) {
+      // eslint-disable-next-line no-console
       console.debug(this.formatMessage('DEBUG', message));
     }
   }

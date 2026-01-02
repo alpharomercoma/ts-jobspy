@@ -244,6 +244,7 @@ export class Indeed implements Scraper {
       `;
     }
 
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
     if (this.scraperInput.jobType || this.scraperInput.isRemote) {
       const jobTypeKeyMapping: Partial<Record<JobType, string>> = {
         [JobType.FULL_TIME]: 'CF3CP',

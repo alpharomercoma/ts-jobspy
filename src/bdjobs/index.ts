@@ -91,7 +91,7 @@ export class BDJobs implements Scraper {
           break;
         }
 
-        const $ = cheerio.load(response.data);
+        const $ = cheerio.load(response.data as string);
         const jobCards = findJobListings($);
 
         if (!jobCards || jobCards.length === 0) {
@@ -131,9 +131,11 @@ export class BDJobs implements Scraper {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async processJob(
     _$: cheerio.CheerioAPI,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     jobCard: any
   ): Promise<JobPost | null> {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       const $card = cheerio.load(jobCard);
 
       // Find job link
@@ -236,7 +238,7 @@ export class BDJobs implements Scraper {
         return {};
       }
 
-      const $ = cheerio.load(response.data);
+      const $ = cheerio.load(response.data as string);
       let description = '';
 
       // Try to find the job content div

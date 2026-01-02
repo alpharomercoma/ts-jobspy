@@ -261,7 +261,7 @@ export class ZipRecruiter implements Scraper {
         return { descriptionFull: null, jobUrlDirect: null };
       }
 
-      const $ = cheerio.load(response.data);
+      const $ = cheerio.load(response.data as string);
       const jobDescrDiv = $('div.job_description');
       const companyDescrSection = $('section.company_description');
 

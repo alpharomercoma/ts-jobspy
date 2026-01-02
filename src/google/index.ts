@@ -154,10 +154,11 @@ export class Google implements Scraper {
     });
 
     const patternFc = /<div jsname="Yust4d"[^>]+data-async-fc="([^"]+)"/;
-    const matchFc = response.data.match(patternFc);
+    const htmlData = response.data as string;
+    const matchFc = htmlData.match(patternFc);
     const dataAsyncFc = matchFc ? matchFc[1] : null;
 
-    const jobsRaw = findJobInfoInitialPage(response.data);
+    const jobsRaw = findJobInfoInitialPage(htmlData);
     const jobs: JobPost[] = [];
 
     for (const jobRaw of jobsRaw) {
@@ -186,7 +187,7 @@ export class Google implements Scraper {
       },
     });
 
-    return this.parseJobs(response.data);
+    return this.parseJobs(response.data as string);
   }
 
   private parseJobs(
@@ -247,6 +248,7 @@ export class Google implements Scraper {
   private parseJob(jobInfo: any[]): JobPost | null {
     if (!Array.isArray(jobInfo)) return null;
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const jobUrl = jobInfo[3]?.[0]?.[0] as string | undefined;
     if (!jobUrl || this.seenUrls.has(jobUrl)) {
       return null;
@@ -292,8 +294,8 @@ export class Google implements Scraper {
     };
 
     const isRemote =
-      description?.toLowerCase().includes('remote') ||
-      description?.toLowerCase().includes('wfh') ||
+      description?.toLowerCase().includes('remote') ??
+      description?.toLowerCase().includes('wfh') ??
       false;
 
     return {

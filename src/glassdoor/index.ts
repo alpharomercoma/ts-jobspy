@@ -235,7 +235,8 @@ export class Glassdoor implements Scraper {
         `${this.baseUrl}Job/computer-science-jobs.htm`
       );
       const pattern = /"token":\s*"([^"]+)"/;
-      const match = response.data.match(pattern);
+      const htmlData = response.data as string;
+      const match = htmlData.match(pattern);
       return match ? match[1] : null;
     } catch {
       return null;

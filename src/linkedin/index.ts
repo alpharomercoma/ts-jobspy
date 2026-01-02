@@ -131,7 +131,7 @@ export class LinkedIn implements Scraper {
           return { jobs: jobList };
         }
 
-        const $ = cheerio.load(response.data);
+        const $ = cheerio.load(response.data as string);
         const jobCards = $('div.base-search-card').toArray();
 
         if (jobCards.length === 0) {
@@ -303,11 +303,12 @@ export class LinkedIn implements Scraper {
       }
 
       // Check for signup redirect
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       if (response.request?.res?.responseUrl?.includes('linkedin.com/signup')) {
         return {};
       }
 
-      const $ = cheerio.load(response.data);
+      const $ = cheerio.load(response.data as string);
 
       // Get description
       const divContent = $('div.show-more-less-html__markup').first();
@@ -362,11 +363,15 @@ export class LinkedIn implements Scraper {
   private getLocation(metadataCard: any): Location {
     let location: Location = { country: Country.WORLDWIDE };
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (metadataCard.length) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       const locationTag = metadataCard.find('span.job-search-card__location').first();
-      const locationString = locationTag.length
-        ? locationTag.text().trim()
+      /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
+      const locationString: string = locationTag.length
+        ? (locationTag.text() as string).trim()
         : 'N/A';
+      /* eslint-enable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
 
       const parts = locationString.split(', ');
 

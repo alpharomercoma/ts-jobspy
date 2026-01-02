@@ -20,7 +20,7 @@ export function findJobInfo(jobsData: unknown): unknown[] | null {
       const obj = jobsData as Record<string, unknown>;
       for (const [key, value] of Object.entries(obj)) {
         if (key === '520084652' && Array.isArray(value)) {
-          return value;
+          return value as unknown[];
         }
         const result = findJobInfo(value);
         if (result) return result;

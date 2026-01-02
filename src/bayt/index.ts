@@ -96,7 +96,7 @@ export class BaytScraper implements Scraper {
       const url = `${this.baseUrl}/en/international/jobs/${query}-jobs/?page=${page}`;
       const response = await this.session.get(url);
 
-      const $ = cheerio.load(response.data);
+      const $ = cheerio.load(response.data as string);
       const jobListings = $('li[data-js-job]').toArray();
 
       log.debug(`Found ${jobListings.length} job listing elements`);
@@ -109,6 +109,7 @@ export class BaytScraper implements Scraper {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private extractJobInfo(jobElement: any): JobPost | null {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     const $ = cheerio.load(jobElement);
 
     // Find the h2 element holding the title and link
@@ -149,11 +150,14 @@ export class BaytScraper implements Scraper {
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
   private extractJobUrl(jobGeneralInfo: any): string | null {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     const aTag = jobGeneralInfo.find('a').first();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
     if (aTag.length && aTag.attr('href')) {
-      return this.baseUrl + aTag.attr('href')!.trim();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+      return this.baseUrl + (aTag.attr('href') as string).trim();
     }
     return null;
   }
