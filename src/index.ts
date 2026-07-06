@@ -197,7 +197,7 @@ export async function scrapeJobs(options: ScrapeJobsOptions = {}): Promise<JobDa
       );
     }
 
-    return [siteName as Site];
+    return [siteName];
   };
 
   const siteTypes = getSiteTypes();

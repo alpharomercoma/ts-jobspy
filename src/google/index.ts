@@ -263,7 +263,7 @@ export class Google implements Scraper {
     let state: string | undefined;
     let country: string | undefined;
 
-    if (locationStr && locationStr.includes(',')) {
+    if (locationStr?.includes(',')) {
       const parts = locationStr.split(',').map((p: string) => p.trim());
       city = parts[0];
       state = parts[1];

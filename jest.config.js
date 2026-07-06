@@ -4,6 +4,8 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/test'],
   testMatch: ['**/*.test.ts'],
+  // Live-network integration tests are run separately via `npm run test:integration`
+  testPathIgnorePatterns: ['/node_modules/', '/test/_custom/'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   collectCoverageFrom: [
     'src/**/*.ts',
