@@ -92,6 +92,48 @@ This document tracks known bugs and limitations in both the original python-jobs
 - **Issue**: TypeScript defaulted to `verbose=2` while Python defaults to `verbose=0`
 - **Fix**: Changed default from `2` to `0` to match Python behavior
 
+## Option Verification Audit (2026-07-06)
+
+All `scrapeJobs()` options were exercised live against Indeed and LinkedIn (18-case matrix
+plus HTTP-layer param capture). Findings:
+
+### 1. LinkedIn `datePosted` null under `hoursOld` (Fixed)
+- **Location**: `src/linkedin/index.ts` (`processJob`)
+- **Issue**: LinkedIn renders recently posted jobs with `<time class="job-search-card__listdate--new">`.
+  The port only matched `time.job-search-card__listdate`, so any search dominated by fresh
+  jobs — which is exactly what `hoursOld` returns — produced `datePosted: null` for every job.
+  Upstream python-jobspy has a fallback for the `--new` class that was dropped in the port.
+- **Fix**: Restored the fallback selector (parity with upstream). Unit-tested with card
+  fixtures in `test/linkedin.test.ts`; verified live (hoursOld=24 now returns 0 null dates).
+
+### 2. Indeed `hoursOld` can return jobs with older `datePosted` (Not a bug)
+- **Behavior**: The GraphQL filter applies to `dateOnIndeed` (when the posting appeared on
+  Indeed), while the output `datePosted` reports `datePublished` (original publication date).
+  Reposted jobs can therefore show a `datePosted` older than the `hoursOld` window even though
+  the filter worked. Verified live: a job with `datePublished=2026-06-23` under `hoursOld: 24`
+  had `dateOnIndeed=2026-07-06`. Identical behavior in upstream python-jobspy.
+
+### 3. LinkedIn `isRemote` filter is applied inconsistently by LinkedIn (Limitation)
+- **Behavior**: The scraper correctly sends `f_WT=2` (verified via HTTP capture), but the
+  unauthenticated guest API sometimes ignores it and serves a generic result set — back-to-back
+  identical requests were observed both honoring and ignoring the filter. Additionally, the
+  `isRemote` *output* field is a keyword heuristic (searches title/description/location for
+  "remote"/"wfh"), same as upstream, so it can be false for jobs LinkedIn classifies as remote.
+- **Mitigation**: Treat LinkedIn `isRemote` as best-effort; use `linkedinFetchDescription: true`
+  to give the heuristic more text to scan.
+
+### Verified working (live, 2026-07-06)
+- **Indeed**: searchTerm, location, distance, resultsWanted (exact count), hoursOld (see #2),
+  jobType, isRemote, easyApply, offset (no page overlap), countryIndeed (uk.indeed.com),
+  descriptionFormat html/markdown, enforceAnnualSalary (hourly→yearly conversion).
+- **LinkedIn**: searchTerm, location, resultsWanted, hoursOld (after fix #1), jobType (+ f_JT
+  param), easyApply (f_AL), offset (start param, no overlap), linkedinCompanyIds (f_C — 5/5
+  jobs from requested company), linkedinFetchDescription (descriptions + jobType populated),
+  isRemote (f_WT sent; see #3). Full param assembly verified on the wire:
+  `keywords, location, distance, f_WT, f_JT, f_AL, f_C, f_TPR, start`.
+- **Not verified live**: proxies/caCert/userAgent (need real proxy infra), distance radius
+  accuracy (no ground truth), verbose (logging only).
+
 ## Scraper Test Results (2026-01-02)
 
 | Scraper | Status | Notes |

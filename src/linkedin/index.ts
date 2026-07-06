@@ -233,7 +233,11 @@ export class LinkedIn implements Scraper {
     const location = this.getLocation(metadataCard);
 
     let datePosted: Date | null = null;
-    const datetimeTag = metadataCard.find('time.job-search-card__listdate').first();
+    // Recently posted jobs (e.g. under an hoursOld filter) use the --new class variant
+    let datetimeTag = metadataCard.find('time.job-search-card__listdate').first();
+    if (!datetimeTag.length) {
+      datetimeTag = metadataCard.find('time.job-search-card__listdate--new').first();
+    }
 
     if (datetimeTag.length && datetimeTag.attr('datetime')) {
       try {
