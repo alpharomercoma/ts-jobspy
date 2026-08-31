@@ -28,3 +28,4 @@ npm-debug.log*
 
 # Test artifacts
 *.tsbuildinfo
+.playwright-mcp/
