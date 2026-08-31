@@ -90,12 +90,6 @@ export enum Site {
 }
 
 /**
- * Currently supported site names for scraping
- * Only LinkedIn and Indeed are working. Other scrapers are under maintenance.
- */
-export type SupportedSiteName = 'linkedin' | 'indeed' | Site.LINKEDIN | Site.INDEED;
-
-/**
  * Salary source enumeration
  */
 export enum SalarySource {
@@ -566,6 +560,12 @@ export interface JobPost {
  */
 export interface JobResponse {
   jobs: JobPost[];
+  /**
+   * Failures that interrupted the scrape after some jobs were already
+   * collected (e.g. a rate limit on page 3). A scrape that fails before
+   * collecting anything must throw instead of reporting errors here.
+   */
+  errors?: string[];
 }
 
 /**
@@ -605,34 +605,6 @@ export const DEFAULT_SCRAPER_INPUT: Partial<ScraperInput> = {
 };
 
 /**
- * Options for the main scrapeJobs function
- */
-export interface ScrapeJobsOptions {
-  /** Sites to scrape. Currently only 'linkedin' and 'indeed' are supported. */
-  siteName?: SupportedSiteName | SupportedSiteName[];
-  searchTerm?: string;
-  /** @deprecated Google scraper is under maintenance */
-  googleSearchTerm?: string;
-  location?: string;
-  distance?: number;
-  isRemote?: boolean;
-  jobType?: string;
-  easyApply?: boolean;
-  resultsWanted?: number;
-  countryIndeed?: string;
-  proxies?: string[] | string;
-  caCert?: string;
-  descriptionFormat?: string;
-  linkedinFetchDescription?: boolean;
-  linkedinCompanyIds?: number[];
-  offset?: number;
-  hoursOld?: number;
-  enforceAnnualSalary?: boolean;
-  verbose?: number;
-  userAgent?: string;
-}
-
-/**
  * Abstract base class for scrapers
  */
 export interface Scraper {
@@ -642,44 +614,3 @@ export interface Scraper {
   userAgent?: string;
   scrape(input: ScraperInput): Promise<JobResponse>;
 }
-
-/**
- * Desired column order for output (matching Python implementation)
- */
-export const DESIRED_ORDER: string[] = [
-  'id',
-  'site',
-  'jobUrl',
-  'jobUrlDirect',
-  'title',
-  'company',
-  'location',
-  'datePosted',
-  'jobType',
-  'salarySource',
-  'interval',
-  'minAmount',
-  'maxAmount',
-  'currency',
-  'isRemote',
-  'jobLevel',
-  'jobFunction',
-  'listingType',
-  'emails',
-  'description',
-  'companyIndustry',
-  'companyUrl',
-  'companyLogo',
-  'companyUrlDirect',
-  'companyAddresses',
-  'companyNumEmployees',
-  'companyRevenue',
-  'companyDescription',
-  // Naukri-specific fields
-  'skills',
-  'experienceRange',
-  'companyRating',
-  'companyReviewsCount',
-  'vacancyCount',
-  'workFromHomeType',
-];

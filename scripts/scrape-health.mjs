@@ -31,8 +31,8 @@ const PROBE = {
 async function probe(site) {
   const t0 = Date.now();
   try {
-    const jobs = await scrapeJobs({ ...PROBE, siteName: site });
-    const seconds = (Date.now() - t0) / 1000;
+    const { jobs, meta } = await scrapeJobs({ ...PROBE, sites: site });
+    const siteMeta = meta.sites[0];
     const fieldCoverage = {
       title: jobs.filter((j) => j.title).length,
       company: jobs.filter((j) => j.company).length,
@@ -41,10 +41,11 @@ async function probe(site) {
     };
     return {
       site,
-      status: jobs.length > 0 ? 'ok' : 'empty',
+      status: siteMeta.status,
       received: jobs.length,
-      seconds,
+      seconds: (Date.now() - t0) / 1000,
       fieldCoverage,
+      ...(siteMeta.error && { error: `${siteMeta.error.name}: ${siteMeta.error.message}`.slice(0, 300) }),
     };
   } catch (err) {
     return {
@@ -80,7 +81,7 @@ const lines = [
 ];
 for (const r of results) {
   const exp = expected.sites[r.site];
-  const working = r.status === 'ok';
+  const working = r.status === 'ok' || r.status === 'partial';
   let verdict;
   if (exp.working && !working) {
     verdict = '🔴 REGRESSION';

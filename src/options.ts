@@ -82,13 +82,19 @@ export interface ScrapeOptions {
   enforceAnnualSalary?: boolean;
   /** Cross-site duplicate removal. Default 'none'. */
   dedupe?: DedupeMode | boolean;
-  /** Reject the whole scrape if any requested site fails. Default false: failures are reported per-site in meta. */
+  /** Reject the whole scrape if any requested site fails or is interrupted. Default false: failures are reported per-site in meta. */
   strict?: boolean;
+  /** Abort a site's scrape after this many milliseconds and report it as an error. Default: no timeout. */
+  timeoutMs?: number;
   /** Proxy URL(s); rotated per request when more than one is given. */
   proxies?: string[] | string;
   caCert?: string;
   userAgent?: string;
-  /** 0 = errors only (default), 1 = +warnings, 2 = +info. */
+  /**
+   * 0 = errors only (default), 1 = +warnings, 2 = +info.
+   * Note: the log level is process-global; concurrent scrapeJobs() calls with
+   * different verbose values share the last-set level.
+   */
   verbose?: 0 | 1 | 2;
   linkedin?: LinkedInOptions;
   google?: GoogleOptions;
@@ -111,6 +117,7 @@ export interface ResolvedOptions {
   enforceAnnualSalary: boolean;
   dedupe: DedupeMode;
   strict: boolean;
+  timeoutMs?: number;
   proxies?: string[];
   caCert?: string;
   userAgent?: string;
@@ -121,11 +128,33 @@ export interface ResolvedOptions {
 
 const SITE_NAMES: readonly SiteName[] = [...WORKING_SITES, ...UNDER_MAINTENANCE_SITES];
 
-function assertNonNegativeInt(value: unknown, name: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw new InvalidInputError(`${name} must be a non-negative number, got: ${String(value)}`);
+function assertInt(value: unknown, name: string, min: number): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min) {
+    throw new InvalidInputError(`${name} must be an integer >= ${min}, got: ${String(value)}`);
   }
-  return Math.floor(value);
+  return value;
+}
+
+function assertBoolean(value: unknown, name: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new InvalidInputError(`${name} must be a boolean, got: ${String(value)}`);
+  }
+  return value;
+}
+
+function assertString(value: unknown, name: string): string {
+  if (typeof value !== 'string') {
+    throw new InvalidInputError(`${name} must be a string, got: ${String(value)}`);
+  }
+  return value;
+}
+
+function optional<T>(
+  value: unknown,
+  name: string,
+  check: (value: unknown, name: string) => T
+): T | undefined {
+  return value === undefined ? undefined : check(value, name);
 }
 
 export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
@@ -135,7 +164,12 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
     throw new InvalidInputError(`sites must not be empty; valid sites: ${SITE_NAMES.join(', ')}`);
   }
   const sites: Site[] = [];
-  for (const name of siteNames) {
+  for (const rawName of siteNames) {
+    // Site.ZIP_RECRUITER's enum value is 'zip_recruiter'; accept it as an alias.
+    const name =
+      typeof rawName === 'string' && rawName.toLowerCase() === 'zip_recruiter'
+        ? 'ziprecruiter'
+        : rawName;
     if (typeof name !== 'string' || !SITE_NAMES.includes(name.toLowerCase() as SiteName)) {
       throw new InvalidInputError(
         `Unknown site '${String(name)}'; valid sites: ${SITE_NAMES.join(', ')}`
@@ -163,6 +197,9 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
     throw new InvalidInputError(`Unknown country '${String(options.country)}'`);
   }
 
+  if (options.descriptionFormat !== undefined) {
+    assertString(options.descriptionFormat, 'descriptionFormat');
+  }
   let descriptionFormat: DescriptionFormat;
   switch ((options.descriptionFormat ?? 'markdown').toLowerCase()) {
     case 'markdown':
@@ -205,39 +242,59 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
   let proxies: string[] | undefined;
   if (options.proxies !== undefined) {
     proxies = typeof options.proxies === 'string' ? [options.proxies] : options.proxies;
-    if (!Array.isArray(proxies) || proxies.some((p) => typeof p !== 'string' || p.length === 0)) {
-      throw new InvalidInputError('proxies must be a non-empty string or an array of strings');
+    if (
+      !Array.isArray(proxies) ||
+      proxies.length === 0 ||
+      proxies.some((p) => typeof p !== 'string' || p.length === 0)
+    ) {
+      throw new InvalidInputError(
+        'proxies must be a non-empty string or a non-empty array of non-empty strings'
+      );
     }
   }
 
+  const linkedin = options.linkedin ?? {};
+  optional(linkedin.fetchDescription, 'linkedin.fetchDescription', assertBoolean);
+  if (linkedin.companyIds !== undefined) {
+    if (
+      !Array.isArray(linkedin.companyIds) ||
+      linkedin.companyIds.some((id) => !Number.isSafeInteger(id) || id < 0)
+    ) {
+      throw new InvalidInputError('linkedin.companyIds must be an array of non-negative integers');
+    }
+  }
+  const google = options.google ?? {};
+  optional(google.searchTerm, 'google.searchTerm', assertString);
+
   return {
     sites,
-    searchTerm: options.searchTerm,
-    location: options.location,
-    distance:
-      options.distance === undefined ? 50 : assertNonNegativeInt(options.distance, 'distance'),
-    isRemote: options.isRemote ?? false,
+    searchTerm: optional(options.searchTerm, 'searchTerm', assertString),
+    location: optional(options.location, 'location', assertString),
+    distance: options.distance === undefined ? 50 : assertInt(options.distance, 'distance', 0),
+    isRemote: optional(options.isRemote, 'isRemote', assertBoolean) ?? false,
     jobType,
-    easyApply: options.easyApply,
+    easyApply: optional(options.easyApply, 'easyApply', assertBoolean),
     resultsWanted:
       options.resultsWanted === undefined
         ? 15
-        : assertNonNegativeInt(options.resultsWanted, 'resultsWanted'),
-    offset: options.offset === undefined ? 0 : assertNonNegativeInt(options.offset, 'offset'),
+        : assertInt(options.resultsWanted, 'resultsWanted', 0),
+    offset: options.offset === undefined ? 0 : assertInt(options.offset, 'offset', 0),
+    // hoursOld: 0 would silently disable the filter downstream, so require >= 1.
     hoursOld:
-      options.hoursOld === undefined
-        ? undefined
-        : assertNonNegativeInt(options.hoursOld, 'hoursOld'),
+      options.hoursOld === undefined ? undefined : assertInt(options.hoursOld, 'hoursOld', 1),
     country,
     descriptionFormat,
-    enforceAnnualSalary: options.enforceAnnualSalary ?? false,
+    enforceAnnualSalary:
+      optional(options.enforceAnnualSalary, 'enforceAnnualSalary', assertBoolean) ?? false,
     dedupe,
-    strict: options.strict ?? false,
+    strict: optional(options.strict, 'strict', assertBoolean) ?? false,
+    timeoutMs:
+      options.timeoutMs === undefined ? undefined : assertInt(options.timeoutMs, 'timeoutMs', 1),
     proxies,
-    caCert: options.caCert,
-    userAgent: options.userAgent,
+    caCert: optional(options.caCert, 'caCert', assertString),
+    userAgent: optional(options.userAgent, 'userAgent', assertString),
     verbose,
-    linkedin: options.linkedin ?? {},
-    google: options.google ?? {},
+    linkedin,
+    google,
   };
 }

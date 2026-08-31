@@ -18,6 +18,7 @@ import {
   type Scraper,
   getIndeedDomainValue,
 } from '../model';
+import { IndeedException, RateLimitException } from '../exception';
 import { createSession, createLogger, markdownConverter, extractEmailsFromText } from '../util';
 import { JOB_SEARCH_QUERY, API_HEADERS } from './constant';
 import { getJobType, getCompensation, isJobRemote } from './util';
@@ -70,11 +71,11 @@ interface IndeedSearchResult {
 }
 
 interface IndeedApiResponse {
-  data: {
-    jobSearch: {
-      results: IndeedSearchResult[];
-      pageInfo: {
-        nextCursor: string | null;
+  data?: {
+    jobSearch?: {
+      results?: IndeedSearchResult[];
+      pageInfo?: {
+        nextCursor?: string | null;
       };
     };
   };
@@ -119,6 +120,7 @@ export class Indeed implements Scraper {
     this.headers['indeed-co'] = apiCode;
 
     const jobList: JobPost[] = [];
+    const errors: string[] = [];
     let page = 1;
     let cursor: string | null = null;
     const resultsWanted = input.resultsWanted ?? 15;
@@ -127,7 +129,17 @@ export class Indeed implements Scraper {
     while (this.seenUrls.size < resultsWanted + offset) {
       log.info(`search page: ${page} / ${Math.ceil(resultsWanted / this.jobsPerPage)}`);
 
-      const { jobs, nextCursor } = await this.scrapePage(cursor);
+      let jobs: JobPost[];
+      let nextCursor: string | null;
+      try {
+        ({ jobs, nextCursor } = await this.scrapePage(cursor));
+      } catch (e) {
+        // Nothing collected yet: the whole scrape failed. Partially collected:
+        // report what we have, but record the interruption honestly.
+        if (jobList.length === 0) throw e;
+        errors.push(`page ${page}: ${e instanceof Error ? e.message : String(e)}`);
+        break;
+      }
 
       if (!jobs || jobs.length === 0) {
         log.info(`found no jobs on page: ${page}`);
@@ -143,6 +155,7 @@ export class Indeed implements Scraper {
 
     return {
       jobs: jobList.slice(offset, offset + resultsWanted),
+      ...(errors.length > 0 && { errors }),
     };
   }
 
@@ -178,15 +191,18 @@ export class Indeed implements Scraper {
       });
 
       if (response.status < 200 || response.status >= 400) {
-        log.info(
-          `responded with status code: ${response.status} (submit GitHub issue if this appears to be a bug)`
-        );
-        return { jobs: [], nextCursor: null };
+        if (response.status === 429) {
+          throw new RateLimitException('Indeed', 'Indeed responded with HTTP 429 (rate limited)');
+        }
+        throw new IndeedException(`Indeed API responded with status code ${response.status}`);
       }
 
       const data = response.data;
-      const jobs = data.data.jobSearch.results;
-      const nextCursor = data.data.jobSearch.pageInfo.nextCursor;
+      const jobs = data.data?.jobSearch?.results;
+      const nextCursor = data.data?.jobSearch?.pageInfo?.nextCursor ?? null;
+      if (!Array.isArray(jobs)) {
+        throw new IndeedException('Indeed API response is missing jobSearch results (API change?)');
+      }
 
       const jobList: JobPost[] = [];
       for (const result of jobs) {
@@ -199,7 +215,7 @@ export class Indeed implements Scraper {
       return { jobs: jobList, nextCursor };
     } catch (e) {
       log.error(`Indeed API error: ${(e as Error).message}`);
-      return { jobs: [], nextCursor: null };
+      throw e;
     }
   }
 

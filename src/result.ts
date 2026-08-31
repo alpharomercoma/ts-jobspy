@@ -11,14 +11,18 @@ import type { JobPost } from './model';
 /** One scraped job posting, flattened for easy filtering/export. */
 export interface Job {
   id: string | null;
-  /** Site the job came from ('indeed', 'linkedin', ...). */
+  /** Site the job came from ('indeed', 'linkedin', 'ziprecruiter', ...). */
   site: string;
   jobUrl: string;
   jobUrlDirect: string | null;
   title: string;
   company: string | null;
   location: string | null;
-  /** ISO date (YYYY-MM-DD) the job was posted, when the site reports one. */
+  /**
+   * UTC calendar date (YYYY-MM-DD) of the posting instant, when the site
+   * reports one. Sites report instants without their local timezone, so a
+   * posting made near midnight can differ by one day from the site-local date.
+   */
   datePosted: string | null;
   jobTypes: string[];
   salarySource: string | null;
@@ -50,22 +54,32 @@ export interface Job {
 }
 
 export type SiteStatus =
-  /** Site responded and returned at least one job. */
+  /** Site responded and returned at least one job with no interruptions. */
   | 'ok'
-  /** Site responded but returned zero jobs — a possible block or query with no matches. */
+  /** Site responded but returned zero jobs — a possible soft block, or a query with no matches. */
   | 'empty'
-  /** Scraper threw; see `error`. */
+  /** Some jobs were collected, then the scrape was interrupted (e.g. rate limited mid-pagination); see `error`. */
+  | 'partial'
+  /** The scrape failed before collecting anything; see `error`. */
   | 'error';
 
-export interface SiteMeta {
+export interface SiteError {
+  name: string;
+  message: string;
+}
+
+interface SiteMetaBase {
   site: string;
-  status: SiteStatus;
   /** Jobs this site contributed (before cross-site dedupe). */
   jobs: number;
   requested: number;
   durationMs: number;
-  error?: { name: string; message: string };
 }
+
+/** Discriminated on `status`: `error` is present exactly when something went wrong. */
+export type SiteMeta =
+  | (SiteMetaBase & { status: 'ok' | 'empty'; error?: undefined })
+  | (SiteMetaBase & { status: 'partial' | 'error'; error: SiteError });
 
 export interface ScrapeMeta {
   sites: SiteMeta[];
@@ -79,11 +93,16 @@ export interface ScrapeResult {
   meta: ScrapeMeta;
 }
 
-/** Internal: a scraper's raw output plus bookkeeping. */
+/** Internal: a scraper's outcome plus bookkeeping. */
 export interface SiteOutcome {
   site: string;
   posts: JobPost[];
   requested: number;
   durationMs: number;
-  error?: unknown;
+  /** True when the scraper (or job conversion) threw — even a falsy value. */
+  failed: boolean;
+  /** The thrown value when failed. */
+  thrown?: unknown;
+  /** Interruptions the scraper reported alongside partial results. */
+  errors: string[];
 }

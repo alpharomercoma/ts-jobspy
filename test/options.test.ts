@@ -17,6 +17,10 @@ describe('resolveOptions', () => {
     expect(resolveOptions({ sites: 'ziprecruiter' }).sites).toEqual([Site.ZIP_RECRUITER]);
   });
 
+  it('accepts the Site enum value zip_recruiter as an alias', () => {
+    expect(resolveOptions({ sites: 'zip_recruiter' as never }).sites).toEqual([Site.ZIP_RECRUITER]);
+  });
+
   it('deduplicates requested sites', () => {
     expect(resolveOptions({ sites: ['indeed', 'indeed'] }).sites).toEqual([Site.INDEED]);
   });
@@ -102,5 +106,45 @@ describe('resolveOptions', () => {
     });
     expect(resolved.linkedin).toEqual({ fetchDescription: true, companyIds: [1, 2] });
     expect(resolved.google).toEqual({ searchTerm: 'x jobs' });
+  });
+});
+
+describe('resolveOptions hardening (adversarial review fixes)', () => {
+  it('rejects non-integer numbers instead of flooring', () => {
+    expect(() => resolveOptions({ resultsWanted: 0.9 })).toThrow(InvalidInputError);
+    expect(() => resolveOptions({ offset: Number.MAX_VALUE })).toThrow(InvalidInputError);
+  });
+
+  it('rejects hoursOld 0 (would silently disable the filter)', () => {
+    expect(() => resolveOptions({ hoursOld: 0 })).toThrow(InvalidInputError);
+    expect(resolveOptions({ hoursOld: 1 }).hoursOld).toBe(1);
+  });
+
+  it('rejects an empty proxies array', () => {
+    expect(() => resolveOptions({ proxies: [] })).toThrow(InvalidInputError);
+  });
+
+  it('rejects non-boolean flags', () => {
+    expect(() => resolveOptions({ isRemote: 'false' as never })).toThrow(InvalidInputError);
+    expect(() => resolveOptions({ strict: 1 as never })).toThrow(InvalidInputError);
+    expect(() => resolveOptions({ linkedin: { fetchDescription: 'true' as never } })).toThrow(
+      InvalidInputError
+    );
+  });
+
+  it('rejects a non-string descriptionFormat with InvalidInputError, not TypeError', () => {
+    expect(() => resolveOptions({ descriptionFormat: 7 as never })).toThrow(InvalidInputError);
+  });
+
+  it('rejects invalid linkedin.companyIds', () => {
+    expect(() => resolveOptions({ linkedin: { companyIds: [1.5] } })).toThrow(InvalidInputError);
+    expect(() => resolveOptions({ linkedin: { companyIds: ['a' as never] } })).toThrow(
+      InvalidInputError
+    );
+  });
+
+  it('validates timeoutMs as a positive integer', () => {
+    expect(() => resolveOptions({ timeoutMs: 0 })).toThrow(InvalidInputError);
+    expect(resolveOptions({ timeoutMs: 5000 }).timeoutMs).toBe(5000);
   });
 });

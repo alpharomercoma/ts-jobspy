@@ -29,6 +29,7 @@ import {
   currencyParser,
   removeAttributes,
 } from '../util';
+import { LinkedInException, RateLimitException } from '../exception';
 import { HEADERS } from './constant';
 import {
   jobTypeCode,
@@ -76,13 +77,23 @@ export class LinkedIn implements Scraper {
     }
 
     const jobList: JobPost[] = [];
+    const errors: string[] = [];
     const seenIds = new Set<string>();
-    let start = input.offset ? Math.floor(input.offset / 10) * 10 : 0;
+    // LinkedIn paginates in steps of 10; collect the sub-page remainder and
+    // slice it off at the end so offset is honored exactly.
+    const offset = input.offset ?? 0;
+    let start = Math.floor(offset / 10) * 10;
+    const skip = offset - start;
     let requestCount = 0;
     const secondsOld = input.hoursOld ? input.hoursOld * 3600 : null;
     const resultsWanted = input.resultsWanted ?? 15;
+    const targetCount = resultsWanted + skip;
 
-    const continueSearch = () => jobList.length < resultsWanted && start < 1000;
+    const continueSearch = () => jobList.length < targetCount && start < 1000;
+    const finish = (): JobResponse => ({
+      jobs: jobList.slice(skip, skip + resultsWanted),
+      ...(errors.length > 0 && { errors }),
+    });
 
     while (continueSearch()) {
       requestCount += 1;
@@ -119,19 +130,26 @@ export class LinkedIn implements Scraper {
         );
 
         if (response.status < 200 || response.status >= 400) {
-          if (response.status === 429) {
-            log.error('429 Response - Blocked by LinkedIn for too many requests');
-          } else {
-            log.error(`LinkedIn response status code ${response.status}`);
-          }
-          return { jobs: jobList };
+          const failure =
+            response.status === 429
+              ? new RateLimitException(
+                  'LinkedIn',
+                  'LinkedIn responded with HTTP 429 (blocked for too many requests)'
+                )
+              : new LinkedInException(`LinkedIn responded with status code ${response.status}`);
+          log.error(failure.message);
+          // Nothing collected: fail the scrape. Partially collected: report
+          // what we have, recording the interruption honestly.
+          if (jobList.length === 0) throw failure;
+          errors.push(`page ${requestCount}: ${failure.message}`);
+          return finish();
         }
 
         const $ = cheerio.load(response.data as string);
         const jobCards = $('div.base-search-card').toArray();
 
         if (jobCards.length === 0) {
-          return { jobs: jobList };
+          return finish();
         }
 
         for (const jobCard of jobCards) {
@@ -166,17 +184,19 @@ export class LinkedIn implements Scraper {
           start += jobCards.length;
         }
       } catch (e) {
-        const error = e as Error;
+        const error = e instanceof Error ? e : new Error(String(e));
         if (error.message.includes('Proxy')) {
           log.error('LinkedIn: Bad proxy');
         } else {
           log.error(`LinkedIn: ${error.message}`);
         }
-        return { jobs: jobList };
+        if (jobList.length === 0) throw error;
+        errors.push(`page ${requestCount}: ${error.message}`);
+        return finish();
       }
     }
 
-    return { jobs: jobList.slice(0, resultsWanted) };
+    return finish();
   }
 
   private async processJob(

@@ -76,7 +76,8 @@ scrapeJobs(options)
 ├── enforceAnnualSalary (boolean): convert hourly/monthly wages to annual
 ├── dedupe ('none' | 'url' | 'content' | boolean): default 'none'
 │    'url' = exact URL match; 'content' (= true) = normalized title+company+location
-├── strict (boolean): reject the whole call if any requested site fails; default false
+├── strict (boolean): reject the whole call if any requested site fails or is interrupted; default false
+├── timeoutMs (number): abort a site's scrape after this many ms and report it as an error; default none
 ├── proxies (string | string[]): 'user:pass@host:port', rotated per request
 ├── caCert (string): CA certificate path for proxies
 ├── userAgent (string)
@@ -103,7 +104,11 @@ ScrapeResult
 │   └── skills: string[], experienceRange, companyRating,   // Naukri-specific
 │       companyReviewsCount, vacancyCount, workFromHomeType
 └── meta
-    ├── sites[]: { site, status: 'ok'|'empty'|'error', jobs, requested, durationMs, error? }
+    ├── sites[]: { site, status, jobs, requested, durationMs, error? }
+    │     status: 'ok'      — jobs returned, no interruptions
+    │             'empty'   — site responded with zero jobs (soft block or no matches)
+    │             'partial' — some jobs collected, then interrupted (error says why)
+    │             'error'   — failed before collecting anything (error says why)
     ├── totalDurationMs
     └── duplicatesRemoved
 ```

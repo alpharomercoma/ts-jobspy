@@ -23,15 +23,16 @@ async function benchmarkSite(
   const startTime = Date.now();
 
   try {
-    const jobs = await scrapeJobs({
-      siteName: site,
+    const result = await scrapeJobs({
+      sites: site as never,
       searchTerm,
       resultsWanted,
       verbose: 0, // Suppress logs during benchmark
+      strict: true, // benchmark wants a hard failure, not an empty result
     });
 
     const duration = Date.now() - startTime;
-    const jobsFound = jobs.length;
+    const jobsFound = result.jobs.length;
     const jobsPerSecond = jobsFound / (duration / 1000);
 
     return {

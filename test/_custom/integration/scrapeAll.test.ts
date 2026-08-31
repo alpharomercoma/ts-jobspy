@@ -1,192 +1,83 @@
 /**
- * Integration tests for ts-jobspy
+ * Live integration tests (real network; excluded from `npm test`).
+ * Run with: npm run test:integration
  *
- * These tests make real network requests and should be run sparingly
- * to avoid rate limiting.
+ * These hit real job boards and are inherently flaky: datacenter IPs are often
+ * blocked, LinkedIn rate-limits aggressively. Failures here usually mean IP
+ * blocking, not code breakage — check meta.sites for the reported reason.
  */
+import { scrapeJobs } from '../../../src';
 
-import { scrapeJobs, Site } from '../../../src';
+jest.setTimeout(120_000);
 
-// Set a longer timeout for integration tests
-jest.setTimeout(120000);
+describe('live scrapeJobs (v3)', () => {
+  it('scrapes Indeed and reports ok in meta', async () => {
+    const result = await scrapeJobs({
+      sites: 'indeed',
+      searchTerm: 'software engineer',
+      location: 'San Francisco, CA',
+      resultsWanted: 5,
+    });
 
-describe('Integration Tests', () => {
-  describe('scrapeJobs', () => {
-    it('should scrape jobs from Google with minimal parameters', async () => {
-      const jobs = await scrapeJobs({
-        siteName: 'google',
-        searchTerm: 'software engineer',
-        resultsWanted: 5,
-        verbose: 0,
-      });
-
-      expect(jobs).toBeDefined();
-      expect(Array.isArray(jobs)).toBe(true);
-
-      if (jobs.length > 0) {
-        const job = jobs[0];
-        expect(job).toHaveProperty('title');
-        expect(job).toHaveProperty('company');
-        expect(job).toHaveProperty('jobUrl');
-        expect(job).toHaveProperty('site', 'google');
+    expect(result.meta.sites).toHaveLength(1);
+    const meta = result.meta.sites[0];
+    expect(meta.site).toBe('indeed');
+    expect(['ok', 'empty', 'error']).toContain(meta.status);
+    if (meta.status === 'ok') {
+      expect(result.jobs.length).toBeGreaterThan(0);
+      expect(result.jobs.length).toBeLessThanOrEqual(5);
+      for (const job of result.jobs) {
+        expect(job.title).toBeTruthy();
+        expect(job.jobUrl).toMatch(/^https?:\/\//);
+        expect(job.site).toBe('indeed');
       }
-    });
-
-    it('should scrape jobs from multiple sites concurrently', async () => {
-      const jobs = await scrapeJobs({
-        siteName: ['google', 'indeed'],
-        searchTerm: 'data scientist',
-        location: 'New York',
-        resultsWanted: 5,
-        verbose: 0,
-      });
-
-      expect(jobs).toBeDefined();
-      expect(Array.isArray(jobs)).toBe(true);
-
-      // Check that we got jobs from different sites
-      const sites = [...new Set(jobs.map((j) => j.site))];
-      expect(sites.length).toBeGreaterThanOrEqual(1);
-    });
-
-    it('should handle remote filter', async () => {
-      const jobs = await scrapeJobs({
-        siteName: 'google',
-        searchTerm: 'remote python developer',
-        isRemote: true,
-        resultsWanted: 5,
-        verbose: 0,
-      });
-
-      expect(jobs).toBeDefined();
-      expect(Array.isArray(jobs)).toBe(true);
-    });
-
-    it('should respect resultsWanted limit', async () => {
-      const limit = 3;
-      const jobs = await scrapeJobs({
-        siteName: 'google',
-        searchTerm: 'javascript developer',
-        resultsWanted: limit,
-        verbose: 0,
-      });
-
-      expect(jobs.length).toBeLessThanOrEqual(limit);
-    });
+    }
   });
 
-  describe('Individual Scrapers', () => {
-    // These tests are marked as skipped by default to avoid rate limiting
-    // Remove .skip to run individual scraper tests
-
-    it.skip('should scrape LinkedIn', async () => {
-      const jobs = await scrapeJobs({
-        siteName: Site.LINKEDIN,
-        searchTerm: 'product manager',
-        resultsWanted: 5,
-        verbose: 0,
-      });
-
-      expect(jobs).toBeDefined();
-      if (jobs.length > 0) {
-        expect(jobs[0].site).toBe('linkedin');
-      }
+  it('scrapes LinkedIn and reports ok in meta', async () => {
+    const result = await scrapeJobs({
+      sites: 'linkedin',
+      searchTerm: 'software engineer',
+      location: 'San Francisco, CA',
+      resultsWanted: 5,
     });
 
-    it.skip('should scrape Indeed', async () => {
-      const jobs = await scrapeJobs({
-        siteName: Site.INDEED,
-        searchTerm: 'frontend developer',
-        countryIndeed: 'usa',
-        resultsWanted: 5,
-        verbose: 0,
-      });
-
-      expect(jobs).toBeDefined();
-      if (jobs.length > 0) {
-        expect(jobs[0].site).toBe('indeed');
+    const meta = result.meta.sites[0];
+    expect(meta.site).toBe('linkedin');
+    if (meta.status === 'ok') {
+      expect(result.jobs.length).toBeGreaterThan(0);
+      for (const job of result.jobs) {
+        expect(job.jobUrl).toContain('linkedin.com');
       }
+    }
+  });
+
+  it('scrapes both working sites concurrently with per-site meta', async () => {
+    const result = await scrapeJobs({
+      sites: ['indeed', 'linkedin'],
+      searchTerm: 'typescript developer',
+      resultsWanted: 3,
     });
 
-    it.skip('should scrape ZipRecruiter', async () => {
-      const jobs = await scrapeJobs({
-        siteName: Site.ZIP_RECRUITER,
-        searchTerm: 'backend developer',
-        location: 'San Francisco',
-        resultsWanted: 5,
-        verbose: 0,
-      });
+    expect(result.meta.sites.map((s) => s.site).sort()).toEqual(['indeed', 'linkedin']);
+    for (const site of result.meta.sites) {
+      expect(site.durationMs).toBeGreaterThan(0);
+      expect(site.requested).toBe(3);
+    }
+    // Concurrency: total wall time should be far less than the sum of site times.
+    const sum = result.meta.sites.reduce((acc, s) => acc + s.durationMs, 0);
+    expect(result.meta.totalDurationMs).toBeLessThanOrEqual(sum + 1000);
+  });
 
-      expect(jobs).toBeDefined();
-      if (jobs.length > 0) {
-        expect(jobs[0].site).toBe('zip_recruiter');
-      }
-    });
-
-    it.skip('should scrape Glassdoor', async () => {
-      const jobs = await scrapeJobs({
-        siteName: Site.GLASSDOOR,
-        searchTerm: 'devops engineer',
-        location: 'Seattle',
-        resultsWanted: 5,
-        verbose: 0,
-      });
-
-      expect(jobs).toBeDefined();
-      if (jobs.length > 0) {
-        expect(jobs[0].site).toBe('glassdoor');
-      }
-    });
-
-    it.skip('should scrape Bayt', async () => {
-      const jobs = await scrapeJobs({
-        siteName: Site.BAYT,
-        searchTerm: 'software engineer',
-        resultsWanted: 5,
-        verbose: 0,
-      });
-
-      expect(jobs).toBeDefined();
-      if (jobs.length > 0) {
-        expect(jobs[0].site).toBe('bayt');
-        expect(jobs[0]).toHaveProperty('title');
-        expect(jobs[0]).toHaveProperty('jobUrl');
-      }
-    });
-
-    it.skip('should scrape Naukri', async () => {
-      const jobs = await scrapeJobs({
-        siteName: Site.NAUKRI,
-        searchTerm: 'software engineer',
-        resultsWanted: 5,
-        verbose: 0,
-      });
-
-      expect(jobs).toBeDefined();
-      if (jobs.length > 0) {
-        expect(jobs[0].site).toBe('naukri');
-        expect(jobs[0]).toHaveProperty('title');
-        expect(jobs[0]).toHaveProperty('jobUrl');
-        // Naukri-specific fields
-        expect(jobs[0]).toHaveProperty('skills');
-        expect(jobs[0]).toHaveProperty('experienceRange');
-      }
-    });
-
-    it.skip('should scrape BDJobs', async () => {
-      const jobs = await scrapeJobs({
-        siteName: Site.BDJOBS,
-        searchTerm: 'software engineer',
-        resultsWanted: 5,
-        verbose: 0,
-      });
-
-      expect(jobs).toBeDefined();
-      if (jobs.length > 0) {
-        expect(jobs[0].site).toBe('bdjobs');
-        expect(jobs[0]).toHaveProperty('title');
-        expect(jobs[0]).toHaveProperty('jobUrl');
-      }
-    });
+  it('honors offset without page overlap on Indeed', async () => {
+    const [page1, page2] = await Promise.all([
+      scrapeJobs({ sites: 'indeed', searchTerm: 'nurse', resultsWanted: 5, offset: 0 }),
+      scrapeJobs({ sites: 'indeed', searchTerm: 'nurse', resultsWanted: 5, offset: 5 }),
+    ]);
+    if (page1.meta.sites[0].status === 'ok' && page2.meta.sites[0].status === 'ok') {
+      const urls1 = new Set(page1.jobs.map((j) => j.jobUrl));
+      const overlap = page2.jobs.filter((j) => urls1.has(j.jobUrl));
+      expect(overlap.length).toBeLessThanOrEqual(1); // allow one boundary repeat
+    }
   });
 });

@@ -110,6 +110,15 @@ function displaySite(site: Site): string {
   return SITE_DISPLAY[site] ?? site.charAt(0).toUpperCase() + site.slice(1);
 }
 
+/** Public site identifier emitted in Job.site / meta.sites (matches the `sites` option). */
+const PUBLIC_SITE_NAME: Partial<Record<Site, string>> = {
+  [Site.ZIP_RECRUITER]: 'ziprecruiter',
+};
+
+function publicSiteName(site: Site): string {
+  return PUBLIC_SITE_NAME[site] ?? site;
+}
+
 /**
  * Scrape job postings from one or more job boards.
  *
@@ -149,10 +158,16 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
   );
 
   if (resolved.strict) {
-    const failed = outcomes.filter((o) => o.error !== undefined);
+    const failed = outcomes.filter((o) => o.failed || o.errors.length > 0);
     if (failed.length > 0) {
       throw new AggregateError(
-        failed.map((o) => (o.error instanceof Error ? o.error : new Error(String(o.error)))),
+        failed.map((o) =>
+          o.failed
+            ? o.thrown instanceof Error
+              ? o.thrown
+              : new Error(String(o.thrown))
+            : new Error(o.errors.join('; '))
+        ),
         `Scraping failed for: ${failed.map((o) => o.site).join(', ')}`
       );
     }
@@ -162,39 +177,38 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
   const siteMetas: SiteMeta[] = [];
 
   for (const outcome of outcomes) {
+    // Conversion failures stay isolated to their site: the bad posting is
+    // skipped and recorded, never discarding other sites' results.
+    let converted = 0;
     for (const post of outcome.posts) {
-      jobs.push(toJob(post, outcome.site, resolved));
+      try {
+        jobs.push(toJob(post, outcome.site, resolved));
+        converted += 1;
+      } catch (e) {
+        outcome.errors.push(
+          `failed to convert job ${post.jobUrl ?? post.id ?? '(unknown)'}: ${e instanceof Error ? e.message : String(e)}`
+        );
+      }
     }
-    siteMetas.push({
-      site: outcome.site,
-      status: outcome.error !== undefined ? 'error' : outcome.posts.length > 0 ? 'ok' : 'empty',
-      jobs: outcome.posts.length,
-      requested: outcome.requested,
-      durationMs: outcome.durationMs,
-      ...(outcome.error !== undefined && {
-        error: {
-          name: outcome.error instanceof Error ? outcome.error.name : 'Error',
-          message: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
-        },
-      }),
-    });
+    siteMetas.push(toSiteMeta({ ...outcome, posts: outcome.posts.slice(0, converted) }));
   }
 
-  // Sort by site, then newest first within each site.
-  jobs.sort((a, b) => {
-    const siteCompare = a.site.localeCompare(b.site);
-    if (siteCompare !== 0) return siteCompare;
-    const dateA = a.datePosted ? new Date(a.datePosted).getTime() : 0;
-    const dateB = b.datePosted ? new Date(b.datePosted).getTime() : 0;
-    return dateB - dateA;
-  });
-
+  // Dedupe on a globally newest-first ordering so the freshest copy of a
+  // cross-site duplicate survives regardless of site name ordering.
   let duplicatesRemoved = 0;
   if (resolved.dedupe !== 'none') {
+    jobs.sort((a, b) => dateValue(b) - dateValue(a));
     const deduped = dedupeJobs(jobs, resolved.dedupe);
     jobs = deduped.jobs;
     duplicatesRemoved = deduped.removed;
   }
+
+  // Final ordering: by site, then newest first within each site.
+  jobs.sort((a, b) => {
+    const siteCompare = a.site.localeCompare(b.site);
+    if (siteCompare !== 0) return siteCompare;
+    return dateValue(b) - dateValue(a);
+  });
 
   return {
     jobs,
@@ -206,6 +220,48 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
   };
 }
 
+function dateValue(job: Job): number {
+  return job.datePosted ? new Date(job.datePosted).getTime() : 0;
+}
+
+function toSiteMeta(outcome: SiteOutcome): SiteMeta {
+  const base = {
+    site: outcome.site,
+    jobs: outcome.posts.length,
+    requested: outcome.requested,
+    durationMs: outcome.durationMs,
+  };
+  if (outcome.failed) {
+    return {
+      ...base,
+      status: 'error',
+      error: toSiteError(outcome.thrown),
+    };
+  }
+  if (outcome.errors.length > 0) {
+    return {
+      ...base,
+      status: outcome.posts.length > 0 ? 'partial' : 'error',
+      error: { name: 'ScrapeInterrupted', message: outcome.errors.join('; ') },
+    };
+  }
+  return { ...base, status: outcome.posts.length > 0 ? 'ok' : 'empty' };
+}
+
+function toSiteError(thrown: unknown): { name: string; message: string } {
+  return {
+    name: thrown instanceof Error ? thrown.name : 'Error',
+    message: thrown instanceof Error ? thrown.message : String(thrown),
+  };
+}
+
+class SiteTimeoutError extends Error {
+  constructor(site: string, timeoutMs: number) {
+    super(`${site}: scrape aborted after ${timeoutMs}ms timeout`);
+    this.name = 'SiteTimeoutError';
+  }
+}
+
 async function scrapeSite(
   site: Site,
   scraperInput: ScraperInput,
@@ -213,6 +269,7 @@ async function scrapeSite(
 ): Promise<SiteOutcome> {
   const start = Date.now();
   const requested = resolved.resultsWanted;
+  const name = publicSiteName(site);
   try {
     const ScraperClass = SCRAPER_MAPPING[site];
     const scraper = new ScraperClass({
@@ -220,24 +277,46 @@ async function scrapeSite(
       caCert: resolved.caCert,
       userAgent: resolved.userAgent,
     });
-    const response: JobResponse = await scraper.scrape(scraperInput);
+
+    let scrapePromise = scraper.scrape(scraperInput);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (resolved.timeoutMs !== undefined) {
+      const timeoutMs = resolved.timeoutMs;
+      scrapePromise = Promise.race([
+        scrapePromise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new SiteTimeoutError(name, timeoutMs)), timeoutMs);
+        }),
+      ]);
+    }
+    let response: JobResponse;
+    try {
+      response = await scrapePromise;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+
     log.info(`${displaySite(site)}: finished scraping (${response.jobs.length} jobs)`);
     return {
-      site,
+      site: name,
       posts: response.jobs,
       requested,
       durationMs: Date.now() - start,
+      failed: false,
+      errors: response.errors ?? [],
     };
-  } catch (error) {
+  } catch (thrown) {
     log.error(
-      `${displaySite(site)}: scraping failed — ${error instanceof Error ? error.message : String(error)}`
+      `${displaySite(site)}: scraping failed — ${thrown instanceof Error ? thrown.message : String(thrown)}`
     );
     return {
-      site,
+      site: name,
       posts: [],
       requested,
       durationMs: Date.now() - start,
-      error,
+      failed: true,
+      thrown,
+      errors: [],
     };
   }
 }
@@ -254,7 +333,9 @@ function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
     interval = post.compensation.interval ?? null;
     minAmount = post.compensation.minAmount ?? null;
     maxAmount = post.compensation.maxAmount ?? null;
-    currency = post.compensation.currency ?? 'USD';
+    // Only assume USD when the search country is the US; anywhere else a
+    // missing currency stays unknown rather than becoming wrong data.
+    currency = post.compensation.currency ?? (resolved.country === Country.USA ? 'USD' : null);
     salarySource = SalarySource.DIRECT_DATA;
 
     if (
@@ -283,7 +364,7 @@ function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
     }
   }
 
-  if (!minAmount) {
+  if (minAmount === null && maxAmount === null) {
     salarySource = null;
   }
 
@@ -295,7 +376,10 @@ function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
     title: post.title,
     company: post.companyName,
     location: post.location ? displayLocation(post.location) : null,
-    datePosted: post.datePosted ? post.datePosted.toISOString().split('T')[0] : null,
+    datePosted:
+      post.datePosted && !Number.isNaN(post.datePosted.getTime())
+        ? post.datePosted.toISOString().split('T')[0]
+        : null,
     jobTypes: post.jobType ?? [],
     salarySource,
     interval,

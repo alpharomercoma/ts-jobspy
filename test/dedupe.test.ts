@@ -95,3 +95,42 @@ describe('dedupeJobs', () => {
     expect(dedupeJobs(jobs, 'url').jobs[0].site).toBe('indeed');
   });
 });
+
+describe('dedupeJobs unicode handling (adversarial review fixes)', () => {
+  it('does not collapse distinct CJK postings', () => {
+    const jobs = [
+      makeJob({ title: '工程師 II', company: '甲', location: '台北', jobUrl: 'https://a.com/1' }),
+      makeJob({
+        title: '数据分析师 II',
+        company: '乙',
+        location: '上海',
+        jobUrl: 'https://a.com/2',
+      }),
+    ];
+    expect(dedupeJobs(jobs, 'content').jobs).toHaveLength(2);
+  });
+
+  it('dedupes identical CJK postings', () => {
+    const jobs = [
+      makeJob({ title: '工程師', company: '甲公司', location: '台北', jobUrl: 'https://a.com/1' }),
+      makeJob({ title: '工程師', company: '甲公司', location: '台北', jobUrl: 'https://a.com/2' }),
+    ];
+    expect(dedupeJobs(jobs, 'content').jobs).toHaveLength(1);
+  });
+
+  it('treats accented and unaccented Latin as the same posting', () => {
+    const jobs = [
+      makeJob({ title: 'Café Manager', jobUrl: 'https://a.com/1' }),
+      makeJob({ title: 'Cafe Manager', jobUrl: 'https://a.com/2' }),
+    ];
+    expect(dedupeJobs(jobs, 'content').jobs).toHaveLength(1);
+  });
+
+  it('never uses a title-only key when company and location are both missing', () => {
+    const jobs = [
+      makeJob({ title: 'Engineer', company: null, location: null, jobUrl: 'https://a.com/1' }),
+      makeJob({ title: 'Engineer', company: null, location: null, jobUrl: 'https://a.com/2' }),
+    ];
+    expect(dedupeJobs(jobs, 'content').jobs).toHaveLength(2);
+  });
+});
