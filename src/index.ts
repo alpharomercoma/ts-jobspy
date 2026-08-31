@@ -153,8 +153,9 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
 
   const t0 = Date.now();
 
-  const outcomes = await Promise.all(
-    resolved.sites.map((site) => scrapeSite(site, scraperInput, resolved))
+  const outcomes = await runWithConcurrency(
+    resolved.sites.map((site) => () => scrapeSite(site, scraperInput, resolved)),
+    resolved.siteConcurrency
   );
 
   if (resolved.strict) {
@@ -210,14 +211,46 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
     return dateValue(b) - dateValue(a);
   });
 
+  const totalDurationMs = Date.now() - t0;
+  const totalCollected = siteMetas.reduce((acc, s) => acc + s.jobs, 0);
+  const failedSites = siteMetas.filter(
+    (s) => s.status === 'error' || s.status === 'partial'
+  ).length;
+
   return {
     jobs,
     meta: {
       sites: siteMetas,
-      totalDurationMs: Date.now() - t0,
+      totalDurationMs,
+      jobsPerSecond: rate(totalCollected, totalDurationMs),
+      failureRate: siteMetas.length === 0 ? 0 : round(failedSites / siteMetas.length),
       duplicatesRemoved,
     },
   };
+}
+
+/** Run tasks with at most `limit` in flight; results in input order. */
+async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
+  const results = new Array<T>(tasks.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+    while (next < tasks.length) {
+      const index = next;
+      next += 1;
+      results[index] = await tasks[index]();
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+function round(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** Jobs per second, guarding division by ~zero durations. */
+function rate(jobs: number, durationMs: number): number {
+  return durationMs <= 0 ? 0 : round(jobs / (durationMs / 1000));
 }
 
 function dateValue(job: Job): number {
@@ -230,6 +263,7 @@ function toSiteMeta(outcome: SiteOutcome): SiteMeta {
     jobs: outcome.posts.length,
     requested: outcome.requested,
     durationMs: outcome.durationMs,
+    jobsPerSecond: rate(outcome.posts.length, outcome.durationMs),
   };
   if (outcome.failed) {
     return {

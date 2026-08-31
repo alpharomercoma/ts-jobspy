@@ -86,6 +86,13 @@ export interface ScrapeOptions {
   strict?: boolean;
   /** Abort a site's scrape after this many milliseconds and report it as an error. Default: no timeout. */
   timeoutMs?: number;
+  /**
+   * Scraping strategy: how many sites are scraped in flight at once.
+   * Node runs a single thread with async I/O — there is no multithreading;
+   * concurrency here means overlapping network requests. Default: all
+   * requested sites concurrently. Set 1 for sequential (gentler on your IP).
+   */
+  siteConcurrency?: number;
   /** Proxy URL(s); rotated per request when more than one is given. */
   proxies?: string[] | string;
   caCert?: string;
@@ -118,6 +125,7 @@ export interface ResolvedOptions {
   dedupe: DedupeMode;
   strict: boolean;
   timeoutMs?: number;
+  siteConcurrency: number;
   proxies?: string[];
   caCert?: string;
   userAgent?: string;
@@ -290,6 +298,10 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
     strict: optional(options.strict, 'strict', assertBoolean) ?? false,
     timeoutMs:
       options.timeoutMs === undefined ? undefined : assertInt(options.timeoutMs, 'timeoutMs', 1),
+    siteConcurrency:
+      options.siteConcurrency === undefined
+        ? sites.length
+        : Math.min(assertInt(options.siteConcurrency, 'siteConcurrency', 1), sites.length),
     proxies,
     caCert: optional(options.caCert, 'caCert', assertString),
     userAgent: optional(options.userAgent, 'userAgent', assertString),

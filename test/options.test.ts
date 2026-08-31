@@ -147,4 +147,16 @@ describe('resolveOptions hardening (adversarial review fixes)', () => {
     expect(() => resolveOptions({ timeoutMs: 0 })).toThrow(InvalidInputError);
     expect(resolveOptions({ timeoutMs: 5000 }).timeoutMs).toBe(5000);
   });
+
+  it('validates siteConcurrency and caps it at the number of sites', () => {
+    expect(() => resolveOptions({ siteConcurrency: 0 })).toThrow(InvalidInputError);
+    expect(() => resolveOptions({ siteConcurrency: 1.5 })).toThrow(InvalidInputError);
+    expect(
+      resolveOptions({ sites: ['indeed', 'linkedin'], siteConcurrency: 1 }).siteConcurrency
+    ).toBe(1);
+    expect(
+      resolveOptions({ sites: ['indeed', 'linkedin'], siteConcurrency: 99 }).siteConcurrency
+    ).toBe(2);
+    expect(resolveOptions({ sites: ['indeed', 'linkedin'] }).siteConcurrency).toBe(2);
+  });
 });

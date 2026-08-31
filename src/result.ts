@@ -74,6 +74,8 @@ interface SiteMetaBase {
   jobs: number;
   requested: number;
   durationMs: number;
+  /** Throughput for this site: jobs / durationMs, in jobs per second. */
+  jobsPerSecond: number;
 }
 
 /** Discriminated on `status`: `error` is present exactly when something went wrong. */
@@ -84,6 +86,17 @@ export type SiteMeta =
 export interface ScrapeMeta {
   sites: SiteMeta[];
   totalDurationMs: number;
+  /**
+   * Overall throughput: total jobs (before dedupe) / totalDurationMs, in jobs
+   * per second. With the default concurrent strategy this exceeds the per-site
+   * rates because sites overlap in time.
+   */
+  jobsPerSecond: number;
+  /**
+   * Fraction of requested sites whose scrape failed or was interrupted
+   * (status 'error' or 'partial'), 0..1.
+   */
+  failureRate: number;
   /** Jobs removed by cross-site dedupe (0 when dedupe is 'none'). */
   duplicatesRemoved: number;
 }

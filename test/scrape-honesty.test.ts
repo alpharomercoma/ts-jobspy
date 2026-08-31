@@ -114,3 +114,47 @@ describe('honest per-site meta', () => {
     expect(result.meta.duplicatesRemoved).toBe(1);
   });
 });
+
+describe('metrics and strategy', () => {
+  it('reports per-site and overall jobsPerSecond and a zero failureRate on success', async () => {
+    behavior.indeed = () => Promise.resolve({ jobs: [makePost()] });
+    behavior.linkedin = () => Promise.resolve({ jobs: [makePost({ jobUrl: 'https://l.com/1' })] });
+
+    const result = await scrapeJobs({ sites: ['indeed', 'linkedin'] });
+    for (const site of result.meta.sites) {
+      expect(typeof site.jobsPerSecond).toBe('number');
+      expect(site.jobsPerSecond).toBeGreaterThanOrEqual(0);
+    }
+    expect(result.meta.jobsPerSecond).toBeGreaterThanOrEqual(0);
+    expect(result.meta.failureRate).toBe(0);
+  });
+
+  it('computes failureRate from failed and interrupted sites', async () => {
+    behavior.indeed = () => Promise.reject(new Error('boom'));
+    behavior.linkedin = () => Promise.resolve({ jobs: [makePost({ jobUrl: 'https://l.com/1' })] });
+
+    const result = await scrapeJobs({ sites: ['indeed', 'linkedin'] });
+    expect(result.meta.failureRate).toBe(0.5);
+  });
+
+  it('siteConcurrency: 1 runs sites sequentially', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const tracked = (post: JobPost) => async (): Promise<JobResponse> => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 20));
+      inFlight -= 1;
+      return { jobs: [post] };
+    };
+    behavior.indeed = tracked(makePost());
+    behavior.linkedin = tracked(makePost({ jobUrl: 'https://l.com/1' }));
+
+    await scrapeJobs({ sites: ['indeed', 'linkedin'], siteConcurrency: 1 });
+    expect(maxInFlight).toBe(1);
+
+    maxInFlight = 0;
+    await scrapeJobs({ sites: ['indeed', 'linkedin'] });
+    expect(maxInFlight).toBe(2);
+  });
+});

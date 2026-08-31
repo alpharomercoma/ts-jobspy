@@ -236,3 +236,17 @@ wall time with per-site meta reporting indeed=ok, linkedin=ok, google=empty.
 All upstream python-jobspy fixes through HEAD (Feb 2026) are already in this
 port (LinkedIn `--listdate--new` fallback = upstream #343; BDJobs user_agent =
 upstream #295 fix). Upstream is dormant; v3 diverges deliberately.
+
+## Strategy Benchmark (2026-08-31, residential IP, 15 jobs/site)
+
+| Strategy | Site | Jobs | Duration | Jobs/sec | Jobs/min | Status |
+|----------|------|------|----------|----------|----------|--------|
+| concurrent (default) | indeed | 15 | 0.8s | 17.79 | 1067 | ok |
+| concurrent (default) | linkedin | 15 | 5.7s | 2.61 | 157 | ok |
+| concurrent (default) | overall | 30 | 5.8s | 5.21 | 313 | failureRate 0 |
+| sequential (siteConcurrency: 1) | indeed | 15 | 1.6s | 9.62 | 577 | ok |
+| sequential (siteConcurrency: 1) | linkedin | 15 | 7.8s | 1.92 | 115 | ok |
+| sequential (siteConcurrency: 1) | overall | 30 | 9.4s | 3.21 | 193 | failureRate 0 |
+
+Reproduce with `node scripts/benchmark.mjs` after `npm run build`. Per-call
+metrics (jobsPerSecond, failureRate) ship in every scrape's `meta`.

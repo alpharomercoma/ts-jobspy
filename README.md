@@ -78,6 +78,8 @@ scrapeJobs(options)
 │    'url' = exact URL match; 'content' (= true) = normalized title+company+location
 ├── strict (boolean): reject the whole call if any requested site fails or is interrupted; default false
 ├── timeoutMs (number): abort a site's scrape after this many ms and report it as an error; default none
+├── siteConcurrency (number): how many sites are scraped in flight at once;
+│    default all requested sites concurrently, 1 = sequential (gentler on your IP)
 ├── proxies (string | string[]): 'user:pass@host:port', rotated per request
 ├── caCert (string): CA certificate path for proxies
 ├── userAgent (string)
@@ -110,10 +112,33 @@ ScrapeResult
     │             'partial' — some jobs collected, then interrupted (error says why)
     │             'error'   — failed before collecting anything (error says why)
     ├── totalDurationMs
+    ├── jobsPerSecond            // overall throughput (each site also reports its own)
+    ├── failureRate              // failed/interrupted sites / requested sites, 0..1
     └── duplicatesRemoved
 ```
 
 Every field a site provides is passed through — filtering is yours to do.
+
+## Concurrency model & throughput
+
+Node.js runs a single thread with asynchronous I/O — there is no multithreading
+or multiprocessing here, and none is needed: scraping is network-bound, so
+overlapping requests is what matters. The `siteConcurrency` option picks the
+strategy: by default all requested sites are scraped concurrently; `1` scrapes
+them one at a time (slower, but gentler on your IP against rate limits).
+
+Every scrape reports its own metrics in `meta` — `jobsPerSecond` per site and
+overall, `durationMs`, and `failureRate` — so throughput is measurable on every
+call, not just in benchmarks. `node scripts/benchmark.mjs` (in the repo) runs
+the strategy comparison live; from a residential IP (2026-08-31, 15 jobs/site):
+
+| Strategy | Indeed | LinkedIn | Overall | Failure rate |
+|----------|--------|----------|---------|--------------|
+| concurrent (default) | ~1067 jobs/min | ~157 jobs/min | ~313 jobs/min | 0 |
+| sequential (`siteConcurrency: 1`) | ~577 jobs/min | ~115 jobs/min | ~193 jobs/min | 0 |
+
+LinkedIn's rate is bounded by its own guest-API politeness delays; Indeed's
+GraphQL API returns 100 jobs per request and dominates throughput.
 
 ## Site status
 
