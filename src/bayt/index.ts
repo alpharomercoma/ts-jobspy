@@ -172,4 +172,3 @@ export class BaytScraper implements Scraper {
     return hash;
   }
 }
-

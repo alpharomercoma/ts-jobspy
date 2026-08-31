@@ -323,4 +323,3 @@ export class BDJobs implements Scraper {
     return Math.abs(hash);
   }
 }
-

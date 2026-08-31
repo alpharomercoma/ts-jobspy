@@ -69,7 +69,6 @@ function getInterval(payPeriod: string): CompensationInterval | undefined {
   return mapping[payPeriod.toUpperCase()];
 }
 
-
 /**
  * Parse location from location name string
  */

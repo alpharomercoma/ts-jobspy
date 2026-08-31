@@ -51,8 +51,12 @@ export class LinkedIn implements Scraper {
   private readonly delay = 3;
   private readonly bandDelay = 4;
 
+  private readonly detailDelay = 1;
+  private readonly detailBandDelay = 2;
+
   private session: AxiosInstance | null = null;
   private scraperInput: ScraperInput | null = null;
+  private enrichmentErrors: string[] = [];
   private readonly jobUrlDirectRegex = /(?<=\?url=)[^"]+/;
 
   constructor(options: { proxies?: string[]; caCert?: string; userAgent?: string } = {}) {
@@ -67,17 +71,22 @@ export class LinkedIn implements Scraper {
     this.session = createSession({
       proxies: this.proxies,
       caCert: this.caCert,
+      userAgent: this.userAgent,
       hasRetry: true,
       retryDelay: 5,
     });
 
-    // Update session headers
+    // Update session headers; a caller-supplied userAgent overrides the default.
     if (this.session.defaults.headers) {
       Object.assign(this.session.defaults.headers, HEADERS);
+      if (this.userAgent) {
+        this.session.defaults.headers['user-agent'] = this.userAgent;
+      }
     }
 
     const jobList: JobPost[] = [];
     const errors: string[] = [];
+    this.enrichmentErrors = [];
     const seenIds = new Set<string>();
     // LinkedIn paginates in steps of 10; collect the sub-page remainder and
     // slice it off at the end so offset is honored exactly.
@@ -90,10 +99,13 @@ export class LinkedIn implements Scraper {
     const targetCount = resultsWanted + skip;
 
     const continueSearch = () => jobList.length < targetCount && start < 1000;
-    const finish = (): JobResponse => ({
-      jobs: jobList.slice(skip, skip + resultsWanted),
-      ...(errors.length > 0 && { errors }),
-    });
+    const finish = (): JobResponse => {
+      const all = [...errors, ...this.enrichmentErrors];
+      return {
+        jobs: jobList.slice(skip, skip + resultsWanted),
+        ...(all.length > 0 && { errors: all }),
+      };
+    };
 
     while (continueSearch()) {
       requestCount += 1;
@@ -126,6 +138,7 @@ export class LinkedIn implements Scraper {
           {
             params: filteredParams,
             timeout: 10000,
+            signal: input.signal,
           }
         );
 
@@ -270,6 +283,9 @@ export class LinkedIn implements Scraper {
     } = {};
 
     if (fullDescr) {
+      // Pace individual detail fetches so enrichment doesn't fire a burst of
+      // back-to-back page loads within a single search page.
+      await randomDelay(this.detailDelay, this.detailDelay + this.detailBandDelay);
       jobDetails = await this.getJobDetails(jobId);
       description = jobDetails.description ?? null;
     }
@@ -311,15 +327,20 @@ export class LinkedIn implements Scraper {
     try {
       const response = await this.session.get(`${this.baseUrl}/jobs/view/${jobId}`, {
         timeout: 5000,
+        signal: this.scraperInput?.signal,
       });
 
       if (response.status < 200 || response.status >= 400) {
+        this.enrichmentErrors.push(
+          `job ${jobId}: description fetch returned HTTP ${response.status}`
+        );
         return {};
       }
 
       // Check for signup redirect
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       if (response.request?.res?.responseUrl?.includes('linkedin.com/signup')) {
+        this.enrichmentErrors.push(`job ${jobId}: description blocked by signup redirect`);
         return {};
       }
 
@@ -367,7 +388,10 @@ export class LinkedIn implements Scraper {
         companyLogo,
         jobFunction,
       };
-    } catch {
+    } catch (e) {
+      this.enrichmentErrors.push(
+        `job ${jobId}: description fetch failed — ${e instanceof Error ? e.message : String(e)}`
+      );
       return {};
     }
   }
@@ -424,4 +448,3 @@ export class LinkedIn implements Scraper {
     return undefined;
   }
 }
-

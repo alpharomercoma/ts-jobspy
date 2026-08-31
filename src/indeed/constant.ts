@@ -7,7 +7,7 @@ export const JOB_SEARCH_QUERY = `
         jobSearch(
         {what}
         {location}
-        limit: 100
+        limit: {limit}
         {cursor}
         sort: RELEVANCE
         {filters}

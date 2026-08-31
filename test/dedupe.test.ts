@@ -26,6 +26,7 @@ function makeJob(overrides: Partial<Job>): Job {
     companyIndustry: null,
     companyUrl: null,
     companyLogo: null,
+    bannerPhotoUrl: null,
     companyUrlDirect: null,
     companyAddresses: null,
     companyNumEmployees: null,

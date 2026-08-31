@@ -39,6 +39,7 @@ export interface Job {
   companyIndustry: string | null;
   companyUrl: string | null;
   companyLogo: string | null;
+  bannerPhotoUrl: string | null;
   companyUrlDirect: string | null;
   companyAddresses: string | null;
   companyNumEmployees: string | null;

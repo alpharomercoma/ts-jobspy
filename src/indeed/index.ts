@@ -125,14 +125,17 @@ export class Indeed implements Scraper {
     let cursor: string | null = null;
     const resultsWanted = input.resultsWanted ?? 15;
     const offset = input.offset ?? 0;
+    // Don't fetch a full 100-row page (each with descriptions + employer
+    // dossiers) when far fewer jobs are needed.
+    const pageSize = Math.min(this.jobsPerPage, resultsWanted + offset);
 
     while (this.seenUrls.size < resultsWanted + offset) {
-      log.info(`search page: ${page} / ${Math.ceil(resultsWanted / this.jobsPerPage)}`);
+      log.info(`search page: ${page} / ${Math.ceil((resultsWanted + offset) / pageSize)}`);
 
       let jobs: JobPost[];
       let nextCursor: string | null;
       try {
-        ({ jobs, nextCursor } = await this.scrapePage(cursor));
+        ({ jobs, nextCursor } = await this.scrapePage(cursor, pageSize));
       } catch (e) {
         // Nothing collected yet: the whole scrape failed. Partially collected:
         // report what we have, but record the interruption honestly.
@@ -160,27 +163,35 @@ export class Indeed implements Scraper {
   }
 
   private async scrapePage(
-    cursor: string | null
+    cursor: string | null,
+    pageSize: number
   ): Promise<{ jobs: JobPost[]; nextCursor: string | null }> {
     if (!this.session || !this.scraperInput) {
       return { jobs: [], nextCursor: null };
     }
 
     const filters = this.buildFilters();
-    const searchTerm = this.scraperInput.searchTerm?.replace(/"/g, '\\"') ?? '';
+    // GraphQL string literals follow JSON string rules, so JSON.stringify
+    // yields a correctly escaped, quoted literal — safe against quotes,
+    // backslashes, and newlines in user-supplied searchTerm/location.
+    const whatArg = this.scraperInput.searchTerm
+      ? `what: ${JSON.stringify(this.scraperInput.searchTerm)}`
+      : '';
+    const locationArg = this.scraperInput.location
+      ? `location: {where: ${JSON.stringify(this.scraperInput.location)}, radius: ${this.scraperInput.distance ?? 50}, radiusUnit: MILES}`
+      : '';
 
-    const query = JOB_SEARCH_QUERY.replace('{what}', searchTerm ? `what: "${searchTerm}"` : '')
-      .replace(
-        '{location}',
-        this.scraperInput.location
-          ? `location: {where: "${this.scraperInput.location}", radius: ${this.scraperInput.distance ?? 50}, radiusUnit: MILES}`
-          : ''
-      )
+    const query = JOB_SEARCH_QUERY.replace('{what}', whatArg)
+      .replace('{location}', locationArg)
+      .replace('{limit}', String(pageSize))
       .replace('{cursor}', cursor ? `cursor: "${cursor}"` : '')
       .replace('{filters}', filters);
 
     const payload = { query };
 
+    // Indeed's mobile GraphQL API requires its specific app user-agent as part
+    // of the handshake (a custom UA yields HTTP 403), so userAgent is
+    // deliberately not applied here — see the userAgent option docs.
     const headersTemp = { ...API_HEADERS };
     headersTemp['indeed-co'] = this.apiCountryCode;
 
@@ -188,6 +199,7 @@ export class Indeed implements Scraper {
       const response = await this.session.post<IndeedApiResponse>(this.apiUrl, payload, {
         headers: headersTemp,
         timeout: 10000,
+        signal: this.scraperInput.signal,
       });
 
       if (response.status < 200 || response.status >= 400) {
@@ -347,4 +359,3 @@ export class Indeed implements Scraper {
     };
   }
 }
-

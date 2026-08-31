@@ -442,4 +442,3 @@ export class Glassdoor implements Scraper {
     return JSON.stringify([payload]);
   }
 }
-

@@ -250,3 +250,27 @@ upstream #295 fix). Upstream is dormant; v3 diverges deliberately.
 
 Reproduce with `node scripts/benchmark.mjs` after `npm run build`. Per-call
 metrics (jobsPerSecond, failureRate) ship in every scrape's `meta`.
+
+## Round-2 Adversarial QA (2026-08-31, codex + Claude reviewer)
+
+Both reviewers independently flagged the same core issues; all addressed:
+- **429/status handling was dead code** — createSession's validateStatus rejected
+  non-2xx before scrapers could classify. Now validateStatus accepts all; scrapers
+  classify 429→RateLimitException; retries limited to transport errors (no 429 storm).
+- **GraphQL injection** — Indeed query now escapes searchTerm/location via JSON.stringify.
+  Verified live: `location: 'Austin, TX" ) malicious'` returns empty, not a crash.
+- **userAgent was ignored** — now threaded to LinkedIn/HTML scrapers. NOT applied to
+  Indeed (its GraphQL API requires the fixed app UA; a custom UA returns HTTP 403 —
+  verified live).
+- **caCert was a no-op** — now implemented via https.Agent({ca}).
+- **timeoutMs didn't abort** — now wires an AbortController/signal into all axios calls
+  and aborts on timeout (rejects race first for deterministic classification).
+- **LinkedIn enrichment** — per-description fetches are now paced (jittered 1–3s) and
+  their failures are surfaced in meta (→ partial), not silently swallowed.
+- **Indeed over-fetch** — page size is min(100, resultsWanted+offset). Verified live:
+  resultsWanted:1 now returns 1 job in ~330ms instead of downloading 100.
+- **strict didn't cover conversion failures** — strict check moved after job conversion.
+- **bannerPhotoUrl** added to the Job output (was the only dropped JobPost field).
+
+Accepted as-is: shared Indeed mobile API key (inherent to the mobile GraphQL endpoint,
+same as upstream python-jobspy); Node TLS fingerprint (documented — use proxies).

@@ -6,6 +6,8 @@
  * Original: https://github.com/speedyapply/JobSpy
  */
 
+import { readFileSync } from 'node:fs';
+import { Agent as HttpsAgent } from 'node:https';
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 import axiosRetry from 'axios-retry';
 import { HttpsProxyAgent } from 'https-proxy-agent';
@@ -172,9 +174,16 @@ export function createSession(options: SessionOptions = {}): AxiosInstance {
 
   const proxySession = new RotatingProxySession(proxies);
 
+  // Custom CA: read once and attach to every request's agent.
+  const ca = caCert ? readFileSync(caCert) : undefined;
+
   const instance = axios.create({
     timeout,
-    validateStatus: (status) => status >= 200 && status < 400,
+    // Resolve every HTTP status so scrapers can classify 429/4xx/5xx themselves
+    // (see each scraper's status handling). Network errors still reject and are
+    // subject to the retry policy below; HTTP status codes are not auto-retried,
+    // which avoids turning a single 429 into a burst of blocked requests.
+    validateStatus: () => true,
     headers: {
       'User-Agent':
         userAgent ??
@@ -184,6 +193,7 @@ export function createSession(options: SessionOptions = {}): AxiosInstance {
 
   // Add request interceptor for proxy rotation
   instance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+    let agentAttached = false;
     if (proxySession.hasProxies()) {
       const proxy = proxySession.getNextProxy();
       if (proxy && proxy.http !== 'http://localhost') {
@@ -192,15 +202,16 @@ export function createSession(options: SessionOptions = {}): AxiosInstance {
           config.httpsAgent = new SocksProxyAgent(proxyUrl);
           config.httpAgent = new SocksProxyAgent(proxyUrl);
         } else {
-          config.httpsAgent = new HttpsProxyAgent(proxyUrl);
+          config.httpsAgent = new HttpsProxyAgent(proxyUrl, ca ? { ca } : {});
           config.httpAgent = new HttpsProxyAgent(proxyUrl);
         }
+        agentAttached = true;
       }
     }
 
-    if (caCert) {
-      // For custom CA certificates, would need to configure with https.Agent
-      // This is handled by the proxy agents if needed
+    // No proxy but a custom CA: attach a plain https agent carrying it.
+    if (ca && !agentAttached) {
+      config.httpsAgent = new HttpsAgent({ ca });
     }
 
     return config;
@@ -211,16 +222,11 @@ export function createSession(options: SessionOptions = {}): AxiosInstance {
     axiosRetry(instance, {
       retries: maxRetries,
       retryDelay: (retryCount) => retryCount * retryDelay * 1000,
-      retryCondition: (error) => {
-        return (
-          axiosRetry.isNetworkOrIdempotentRequestError(error) ||
-          error.response?.status === 429 ||
-          error.response?.status === 500 ||
-          error.response?.status === 502 ||
-          error.response?.status === 503 ||
-          error.response?.status === 504
-        );
-      },
+      // Only retry transport-level failures. HTTP status codes (429/5xx) resolve
+      // rather than throw (validateStatus above), so retrying them here would
+      // both never fire and, if it did, amplify a block into repeated requests —
+      // scrapers classify those statuses and back off by returning instead.
+      retryCondition: (error) => axiosRetry.isNetworkOrIdempotentRequestError(error),
     });
   }
 
@@ -514,8 +520,6 @@ export function randomDelay(min: number, max: number): Promise<void> {
   const delay = Math.random() * (max - min) + min;
   return sleep(delay * 1000);
 }
-
-
 
 /**
  * Check if job is remote based on text content

@@ -95,7 +95,13 @@ export interface ScrapeOptions {
   siteConcurrency?: number;
   /** Proxy URL(s); rotated per request when more than one is given. */
   proxies?: string[] | string;
+  /** Path to a PEM CA-certificate file, trusted for all requests (e.g. behind a TLS-inspecting proxy). */
   caCert?: string;
+  /**
+   * Custom User-Agent for requests. Applies to LinkedIn and the HTML scrapers;
+   * NOT to Indeed, whose GraphQL API requires its fixed app user-agent (a
+   * custom one returns HTTP 403).
+   */
   userAgent?: string;
   /**
    * 0 = errors only (default), 1 = +warnings, 2 = +info.

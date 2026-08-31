@@ -396,4 +396,3 @@ export class Naukri implements Scraper {
     return null;
   }
 }
-

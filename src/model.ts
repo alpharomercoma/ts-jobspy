@@ -588,8 +588,11 @@ export interface ScraperInput {
   requestTimeout?: number;
   resultsWanted?: number;
   hoursOld?: number;
+  /** Custom User-Agent applied to every request for this scrape. */
+  userAgent?: string;
+  /** Aborts in-flight requests when the orchestrator's timeout fires. */
+  signal?: AbortSignal;
 }
-
 
 /**
  * Abstract base class for scrapers

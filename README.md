@@ -140,6 +140,24 @@ the strategy comparison live; from a residential IP (2026-08-31, 15 jobs/site):
 LinkedIn's rate is bounded by its own guest-API politeness delays; Indeed's
 GraphQL API returns 100 jobs per request and dominates throughput.
 
+## Reliability, stealth & security notes
+
+- **Rate limiting**: a 429 or block surfaces as `status: 'error'`/`'partial'` with a
+  `RateLimitException` message in `meta.sites[].error` — it never silently looks like an
+  empty result. HTTP status codes are not auto-retried (only transport errors are), so a
+  block is reported rather than amplified into a burst.
+- **Pacing**: LinkedIn requests — including per-job description fetches — are jittered.
+  Use `siteConcurrency: 1` and modest `resultsWanted` to stay under rate limits; add
+  `proxies` for large scrapes.
+- **Fingerprint**: requests send browser-like headers but Node's TLS stack, which
+  sophisticated anti-bot systems can still fingerprint. For heavy or sensitive scraping,
+  route through residential `proxies`. `userAgent` customizes LinkedIn/HTML scrapers;
+  Indeed's GraphQL API requires its fixed app user-agent, so it is left untouched there.
+- **Input safety**: `searchTerm`/`location` are safely escaped into Indeed's GraphQL query
+  (no injection). Options are strictly validated before any request.
+- **`caCert`**: a PEM path trusted for all requests (e.g. behind a TLS-inspecting proxy).
+- **`timeoutMs`**: actually aborts in-flight requests (via `AbortSignal`), not just the wait.
+
 ## Site status
 
 Live status is verified daily by a [scheduled scrape-health workflow](.github/workflows/scrape-health.yml) that alerts when a board changes behavior.

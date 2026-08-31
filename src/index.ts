@@ -149,6 +149,7 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
     linkedinCompanyIds: resolved.linkedin.companyIds,
     offset: resolved.offset,
     hoursOld: resolved.hoursOld,
+    userAgent: resolved.userAgent,
   };
 
   const t0 = Date.now();
@@ -157,22 +158,6 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
     resolved.sites.map((site) => () => scrapeSite(site, scraperInput, resolved)),
     resolved.siteConcurrency
   );
-
-  if (resolved.strict) {
-    const failed = outcomes.filter((o) => o.failed || o.errors.length > 0);
-    if (failed.length > 0) {
-      throw new AggregateError(
-        failed.map((o) =>
-          o.failed
-            ? o.thrown instanceof Error
-              ? o.thrown
-              : new Error(String(o.thrown))
-            : new Error(o.errors.join('; '))
-        ),
-        `Scraping failed for: ${failed.map((o) => o.site).join(', ')}`
-      );
-    }
-  }
 
   let jobs: Job[] = [];
   const siteMetas: SiteMeta[] = [];
@@ -192,6 +177,24 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
       }
     }
     siteMetas.push(toSiteMeta({ ...outcome, posts: outcome.posts.slice(0, converted) }));
+  }
+
+  // Strict mode rejects on any failure or interruption, including conversion
+  // errors recorded above (which is why this runs after conversion).
+  if (resolved.strict) {
+    const failed = outcomes.filter((o) => o.failed || o.errors.length > 0);
+    if (failed.length > 0) {
+      throw new AggregateError(
+        failed.map((o) =>
+          o.failed
+            ? o.thrown instanceof Error
+              ? o.thrown
+              : new Error(String(o.thrown))
+            : new Error(o.errors.join('; '))
+        ),
+        `Scraping failed for: ${failed.map((o) => o.site).join(', ')}`
+      );
+    }
   }
 
   // Dedupe on a globally newest-first ordering so the freshest copy of a
@@ -304,6 +307,9 @@ async function scrapeSite(
   const start = Date.now();
   const requested = resolved.resultsWanted;
   const name = publicSiteName(site);
+  // A per-site AbortController so a timeout actually cancels in-flight requests
+  // rather than leaving the scraper running in the background.
+  const controller = new AbortController();
   try {
     const ScraperClass = SCRAPER_MAPPING[site];
     const scraper = new ScraperClass({
@@ -312,22 +318,33 @@ async function scrapeSite(
       userAgent: resolved.userAgent,
     });
 
-    let scrapePromise = scraper.scrape(scraperInput);
+    const scrapePromise = scraper.scrape({ ...scraperInput, signal: controller.signal });
+    let raced: Promise<JobResponse> = scrapePromise;
     let timer: ReturnType<typeof setTimeout> | undefined;
     if (resolved.timeoutMs !== undefined) {
       const timeoutMs = resolved.timeoutMs;
-      scrapePromise = Promise.race([
+      raced = Promise.race([
         scrapePromise,
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new SiteTimeoutError(name, timeoutMs)), timeoutMs);
+          timer = setTimeout(() => {
+            // Reject the race first so the timeout deterministically wins even
+            // if aborting settles the scraper synchronously, then abort to stop
+            // in-flight requests.
+            reject(new SiteTimeoutError(name, timeoutMs));
+            controller.abort();
+          }, timeoutMs);
         }),
       ]);
     }
     let response: JobResponse;
     try {
-      response = await scrapePromise;
+      response = await raced;
     } finally {
       if (timer !== undefined) clearTimeout(timer);
+      // If the timeout won the race, the scraper promise is still pending;
+      // swallow its eventual (abort) rejection so it can't surface as an
+      // unhandled rejection.
+      scrapePromise.catch(() => undefined);
     }
 
     log.info(`${displaySite(site)}: finished scraping (${response.jobs.length} jobs)`);
@@ -429,6 +446,7 @@ function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
     companyIndustry: post.companyIndustry ?? null,
     companyUrl: post.companyUrl ?? null,
     companyLogo: post.companyLogo ?? null,
+    bannerPhotoUrl: post.bannerPhotoUrl ?? null,
     companyUrlDirect: post.companyUrlDirect ?? null,
     companyAddresses: post.companyAddresses ?? null,
     companyNumEmployees: post.companyNumEmployees ?? null,
@@ -442,4 +460,3 @@ function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
     workFromHomeType: post.workFromHomeType ?? null,
   };
 }
-
