@@ -201,3 +201,38 @@ If you find a bug, please open an issue on GitHub with:
 2. Search parameters used
 3. Error message or unexpected behavior
 4. Steps to reproduce
+
+## Live Verification & Throughput (2026-08-31)
+
+Verified against real sites from a residential IP (adjacent testbed installing the packed tarball):
+
+| Site | Result | Throughput |
+|------|--------|-----------|
+| Indeed | ✅ 25/25 jobs, descriptions/dates/salaries populated | ~30 jobs/sec (25 jobs in 0.84s) |
+| LinkedIn | ✅ 25/25 jobs; descriptions require `linkedin.fetchDescription` | ~2.5 jobs/sec (25 jobs in 10.1s; scraper's built-in delay dominates) |
+| Google | ⚠️ 0 jobs, no error | see below |
+
+v3 envelope verified live: 3-site concurrent scrape (10 jobs/site) completed in 0.93s
+wall time with per-site meta reporting indeed=ok, linkedin=ok, google=empty.
+
+### Google Jobs diagnosis (2026-08-31)
+
+- Plain HTTP GET of `google.com/search?udm=8` returns HTTP 200 with a ~92KB
+  "enable JS" interstitial — no jobs markup, no `data-async-fc` cursor.
+- Tried: consent cookies (SOCS/CONSENT), modern Chrome 141 header set, browser
+  TLS impersonation via impit (Chrome profile), real browser session cookies
+  replayed over curl. All still get the JS wall.
+- A real JS-executing browser (Playwright Chrome) DOES get the classic jobs
+  UI: `jsname="Yust4d"` present, 13 `data-async-fc` cursors — the scraping
+  protocol itself is unchanged; the gate is client fingerprinting requiring JS
+  execution.
+- Upstream python-jobspy (dormant since Feb 2026) has no fix either.
+- Conclusion: Google Jobs is not feasible over plain HTTP today. Options: a
+  pluggable fetcher so users can wire a headless browser, or wait for the
+  daily scrape-health workflow to detect if the gating loosens.
+
+### Upstream parity check (2026-08-31)
+
+All upstream python-jobspy fixes through HEAD (Feb 2026) are already in this
+port (LinkedIn `--listdate--new` fallback = upstream #343; BDJobs user_agent =
+upstream #295 fix). Upstream is dormant; v3 diverges deliberately.

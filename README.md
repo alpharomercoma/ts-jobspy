@@ -1,242 +1,171 @@
 # TypeScript Job Scraper 📝
 
-**ts-jobspy** is a job scraping library for JavaScript/TypeScript with the goal of aggregating jobs from popular job boards with one tool.
+**ts-jobspy** is a job scraping library for JavaScript/TypeScript that aggregates jobs from popular job boards with one call.
 
-This is a TypeScript port of [python-jobspy](https://github.com/speedyapply/JobSpy).
+It began as a TypeScript port of [python-jobspy](https://github.com/speedyapply/JobSpy). As of **v3** it has diverged into its own project with its own API. The last upstream-parity release line is preserved on the [`python-jobspy-parity`](https://github.com/alpharomercoma/ts-jobspy/tree/python-jobspy-parity) branch (v2.x), and v1 lives on [`v1-legacy`](https://github.com/alpharomercoma/ts-jobspy/tree/v1-legacy). Migrating from v2? See [MIGRATION.md](MIGRATION.md).
 
 ## Features
 
-- Scrapes job postings from **LinkedIn** & **Indeed** concurrently
-- Returns structured job data as an array of objects
-- Proxies support to bypass blocking
-- Works with both JavaScript and TypeScript
+- Scrapes **Indeed** & **LinkedIn** concurrently (more boards ship as they become reliably scrapable — see [Site status](#site-status))
+- **Honest results**: every scrape reports per-site status, counts, timing, and errors in `result.meta` — a blocked or failing site can never silently vanish
+- **Strict input validation**: invalid options throw a descriptive `InvalidInputError` instead of silently coercing to defaults
+- **Cross-site deduplication** (opt-in): by URL or by normalized title + company + location
+- Failure isolation: one site erroring never discards another site's jobs (opt into all-or-nothing with `strict: true`)
+- Proxy rotation support (HTTP/HTTPS/SOCKS)
+- Fully typed — the options and result schemas are plain, documented TypeScript types
 
 ## Installation
 
 ```bash
 npm install ts-jobspy
-# or
-yarn add ts-jobspy
-# or
-pnpm add ts-jobspy
 ```
 
-_Node.js version >= [20.0.0](https://nodejs.org/) required_
+_Node.js >= [20.0.0](https://nodejs.org/) required_
 
 ## Usage
 
-```javascript
+```typescript
 import { scrapeJobs } from 'ts-jobspy';
-import fs from 'fs';
+import fs from 'node:fs';
 
-const jobs = await scrapeJobs({
-  siteName: ['indeed', 'linkedin'],
+const result = await scrapeJobs({
+  sites: ['indeed', 'linkedin'], // default: the currently working sites
   searchTerm: 'software engineer',
   location: 'San Francisco, CA',
   resultsWanted: 20,
   hoursOld: 72,
-  countryIndeed: 'USA',
-
-  // linkedinFetchDescription: true // gets more info such as description, direct job url (slower)
+  country: 'usa',
+  dedupe: 'content', // drop the same posting syndicated across boards
+  // linkedin: { fetchDescription: true }, // richer LinkedIn data (slower)
 });
 
-console.log(`Found ${jobs.length} jobs`);
-fs.writeFileSync('jobs.json', JSON.stringify(jobs, null, 2));
+console.log(`Found ${result.jobs.length} jobs`);
+for (const site of result.meta.sites) {
+  console.log(`${site.site}: ${site.status}, ${site.jobs} jobs in ${site.durationMs}ms`);
+}
+fs.writeFileSync('jobs.json', JSON.stringify(result.jobs, null, 2));
 ```
 
 ### Example Output
 
-| site     | company | title                                                            | location          | datePosted | description                                                                      | jobUrl                                        | jobUrlDirect                                       | salarySource | interval | minAmount | maxAmount | currency | isRemote |
-|----------|---------|------------------------------------------------------------------|-------------------|------------|----------------------------------------------------------------------------------|-----------------------------------------------|----------------------------------------------------|--------------|----------|-----------|-----------|----------|----------|
-| indeed   | Adobe   | Software Development Engineer                                    | San Jose, CA, US  | 2026-01-02 | Our Company <br>Changing the world through digital experiences...         | https://www.indeed.com/viewjob?jk=17cf2...    | https://careers.adobe.com/us/en/job/ADOBUSR1633... | direct_data  | yearly   | 139000    | 257550    | USD      | false    |
-| linkedin | Google  | Software Engineer, Infrastructure, User Personalization          | Mountain View, CA | 2025-12-31 | Minimum qualifications:  Bachelor's degree ...         | https://www.linkedin.com/jobs/view/4326...    | https://careers.google.com/jobs/results/10592...   | description  | yearly   | 141000    | 202000    | USD      | false    |
-| linkedin | Twitch  | Software Development Engineer                                    | San Francisco, CA | 2026-01-01 | About Us  <br> Twitch is the world's biggest live streaming service...  | https://www.linkedin.com/jobs/view/4319...    | null                                               | description  | yearly   | 99500     | 200000    | USD      | false    |
+| site     | company | title                                                   | location          | datePosted | jobUrl                                     | interval | minAmount | maxAmount | currency | isRemote |
+|----------|---------|---------------------------------------------------------|-------------------|------------|--------------------------------------------|----------|-----------|-----------|----------|----------|
+| indeed   | Adobe   | Software Development Engineer                           | San Jose, CA, US  | 2026-01-02 | https://www.indeed.com/viewjob?jk=17cf2... | yearly   | 139000    | 257550    | USD      | false    |
+| linkedin | Google  | Software Engineer, Infrastructure, User Personalization | Mountain View, CA | 2025-12-31 | https://www.linkedin.com/jobs/view/4326... | yearly   | 141000    | 202000    | USD      | false    |
 
-### Parameters for `scrapeJobs()`
+## Options
+
+All options are optional. Invalid values throw `InvalidInputError` up front — nothing is silently ignored.
 
 ```plaintext
-Optional
-├── siteName (string | string[]):
-│    linkedin, indeed
-│    (default is all available)
-│
+scrapeJobs(options)
+├── sites (SiteName | SiteName[]):
+│    'indeed' | 'linkedin' | 'ziprecruiter' | 'glassdoor' | 'google' | 'bayt' | 'naukri' | 'bdjobs'
+│    default: the currently working sites (indeed, linkedin)
 ├── searchTerm (string)
-│
 ├── location (string)
-│
-├── distance (number):
-│    in miles, default 50
-│
-├── jobType (string):
-│    fulltime, parttime, internship, contract
-│
-├── proxies (string | string[]):
-│    in format ['user:pass@host:port', 'localhost']
-│    each job board scraper will round robin through the proxies
-│
+├── distance (number): search radius in miles, default 50
+├── jobType (string): fulltime, parttime, internship, contract, ...
 ├── isRemote (boolean)
-│
-├── resultsWanted (number):
-│    number of job results to retrieve for each site specified in 'siteName'
-│
-├── easyApply (boolean):
-│    filters for jobs that are hosted on the job board site
-│
-├── descriptionFormat (string):
-│    markdown, html (default is markdown)
-│
-├── offset (number):
-│    starts the search from an offset
-│
-├── hoursOld (number):
-│    filters jobs by the number of hours since the job was posted
-│
-├── linkedinFetchDescription (boolean):
-│    fetches full description and direct job url for LinkedIn (slower)
-│
-├── linkedinCompanyIds (number[]):
-│    searches for linkedin jobs with specific company ids
-│
-├── countryIndeed (string):
-│    filters the country on Indeed (see supported countries below)
-│
-├── enforceAnnualSalary (boolean):
-│    converts wages to annual salary
-│
-└── caCert (string)
-     path to CA Certificate file for proxies
+├── easyApply (boolean): jobs hosted on the board itself
+├── resultsWanted (number): per site, default 15
+├── offset (number): skip this many results per site
+├── hoursOld (number): only jobs posted in the last N hours
+├── country (string): Indeed/Glassdoor country, default 'usa'
+├── descriptionFormat ('markdown' | 'html' | 'plain'): default 'markdown'
+├── enforceAnnualSalary (boolean): convert hourly/monthly wages to annual
+├── dedupe ('none' | 'url' | 'content' | boolean): default 'none'
+│    'url' = exact URL match; 'content' (= true) = normalized title+company+location
+├── strict (boolean): reject the whole call if any requested site fails; default false
+├── proxies (string | string[]): 'user:pass@host:port', rotated per request
+├── caCert (string): CA certificate path for proxies
+├── userAgent (string)
+├── verbose (0 | 1 | 2): 0 errors only (default), 1 +warnings, 2 +info
+├── linkedin ({ fetchDescription?, companyIds? }): LinkedIn-specific options
+└── google ({ searchTerm? }): verbatim Google Jobs query
 ```
 
-### Limitations
+## Result schema
+
+`scrapeJobs()` resolves to a `ScrapeResult`:
 
 ```plaintext
-├── Indeed limitations:
-│    Only one from this list can be used in a search:
+ScrapeResult
+├── jobs: Job[]                  // sorted by site, then newest first
+│   ├── id, site, jobUrl, jobUrlDirect
+│   ├── title, company, location, datePosted (YYYY-MM-DD)
+│   ├── jobTypes: string[]       // real arrays, not comma-joined strings
+│   ├── salarySource ('direct_data' | 'description'), interval, minAmount, maxAmount, currency
+│   ├── isRemote, jobLevel, jobFunction, listingType
+│   ├── emails: string[], description
+│   ├── companyIndustry, companyUrl, companyLogo, companyUrlDirect,
+│   │   companyAddresses, companyNumEmployees, companyRevenue, companyDescription
+│   └── skills: string[], experienceRange, companyRating,   // Naukri-specific
+│       companyReviewsCount, vacancyCount, workFromHomeType
+└── meta
+    ├── sites[]: { site, status: 'ok'|'empty'|'error', jobs, requested, durationMs, error? }
+    ├── totalDurationMs
+    └── duplicatesRemoved
+```
+
+Every field a site provides is passed through — filtering is yours to do.
+
+## Site status
+
+Live status is verified daily by a [scheduled scrape-health workflow](.github/workflows/scrape-health.yml) that alerts when a board changes behavior.
+
+| Site | Status | Notes |
+|------|--------|-------|
+| Indeed | ✅ Working | GraphQL API; fastest scraper (~30 jobs/sec), minimal rate limiting |
+| LinkedIn | ✅ Working | Guest API; rate limits around the 10th page — use proxies for large scrapes |
+| Google | 🚧 Blocked | Google serves a JS-required page to non-browser clients (the jobs data itself is unchanged); pursuing options |
+| Glassdoor | 🚧 Blocked | TLS fingerprinting; may work with residential proxies |
+| ZipRecruiter | 🚧 Blocked | TLS fingerprinting; US/CA only |
+| Bayt | 🚧 Blocked | TLS fingerprinting |
+| Naukri | ⚠️ Untested | India-focused; worked at last verification |
+| BDJobs | ⚠️ Untested | Bangladesh-focused; may need selector updates |
+
+Blocked/untested sites can still be requested — the per-site `meta` entry will tell you exactly what happened (`empty`, or `error` with the reason).
+
+## Limitations
+
+```plaintext
+├── Indeed: only ONE of these filter groups per search:
 │    - hoursOld
 │    - jobType & isRemote
 │    - easyApply
-│
-└── LinkedIn limitations:
-     - Rate limits at ~10th page. Proxies are recommended for large scrapes.
+├── LinkedIn: rate limits at ~10th page; `isRemote` filter is applied
+│    inconsistently by LinkedIn's own guest API
+└── All boards cap a given search at ~1000 jobs
 ```
 
-## Supported Countries for Job Searching
+## Supported countries (Indeed)
 
-### LinkedIn
+LinkedIn searches globally and uses only `location`. Indeed uses `country`:
 
-LinkedIn searches globally & uses only the `location` parameter.
+Argentina, Australia, Austria, Bahrain, Belgium, Brazil, Canada, Chile, China, Colombia, Costa Rica, Czech Republic, Denmark, Ecuador, Egypt, Finland, France, Germany, Greece, Hong Kong, Hungary, India, Indonesia, Ireland, Israel, Italy, Japan, Kuwait, Luxembourg, Malaysia, Mexico, Morocco, Netherlands, New Zealand, Nigeria, Norway, Oman, Pakistan, Panama, Peru, Philippines, Poland, Portugal, Qatar, Romania, Saudi Arabia, Singapore, South Africa, South Korea, Spain, Sweden, Switzerland, Taiwan, Thailand, Turkey, Ukraine, United Arab Emirates, UK, USA, Uruguay, Venezuela, Vietnam
 
-### Indeed
+## FAQ
 
-Indeed supports most countries. The `countryIndeed` parameter is required. Use the `location` parameter to narrow down by city/state.
+**Q: Why is Indeed returning unrelated roles?**
+A: Indeed searches descriptions too. Use `-word` to exclude and `"exact phrase"` to match:
 
-|                      |              |            |                |
-|----------------------|--------------|------------|----------------|
-| Argentina            | Australia    | Austria    | Bahrain        |
-| Belgium              | Brazil       | Canada     | Chile          |
-| China                | Colombia     | Costa Rica | Czech Republic |
-| Denmark              | Ecuador      | Egypt      | Finland        |
-| France               | Germany      | Greece     | Hong Kong      |
-| Hungary              | India        | Indonesia  | Ireland        |
-| Israel               | Italy        | Japan      | Kuwait         |
-| Luxembourg           | Malaysia     | Mexico     | Morocco        |
-| Netherlands          | New Zealand  | Nigeria    | Norway         |
-| Oman                 | Pakistan     | Panama     | Peru           |
-| Philippines          | Poland       | Portugal   | Qatar          |
-| Romania              | Saudi Arabia | Singapore  | South Africa   |
-| South Korea          | Spain        | Sweden     | Switzerland    |
-| Taiwan               | Thailand     | Turkey     | Ukraine        |
-| United Arab Emirates | UK           | USA        | Uruguay        |
-| Venezuela            | Vietnam      |            |                |
-
-## Notes
-
-- Indeed is the best scraper currently with minimal rate limiting.
-- All job board endpoints are capped at around 1000 jobs on a given search.
-- LinkedIn is the most restrictive and usually rate limits around the 10th page. Proxies are recommended.
-
-## Frequently Asked Questions
-
-**Q: Why is Indeed giving unrelated roles?**
-**A:** Indeed searches the description too.
-
-- use `-` to remove words
-- use `""` for exact match
-
-Example of a good Indeed query:
-
-```javascript
-searchTerm: '"engineering intern" software summer (java OR python OR c++) 2025 -tax -marketing'
+```typescript
+searchTerm: '"engineering intern" software summer (java OR python OR c++) 2026 -tax -marketing'
 ```
 
----
+**Q: Getting HTTP 429?**
+A: You're rate limited. Wait between scrapes and/or pass `proxies` to rotate IPs. With v3, a rate-limited site shows up as `status: 'error'` in `meta.sites` instead of failing the whole call.
 
-**Q: Received a response code 429?**
-**A:** This indicates you have been rate limited. We recommend:
-
-- Wait some time between scrapes (site-dependent)
-- Try using the `proxies` parameter to rotate IP addresses
-
----
-
-### JobPost Schema
-
-```plaintext
-JobPost
-├── title
-├── company
-├── companyUrl
-├── jobUrl
-├── jobUrlDirect
-├── location
-├── isRemote
-├── description
-├── jobType: fulltime, parttime, internship, contract
-├── compensation
-│   ├── interval: yearly, monthly, weekly, daily, hourly
-│   ├── minAmount
-│   ├── maxAmount
-│   ├── currency
-│   └── salarySource: direct_data, description (parsed from posting)
-├── datePosted
-└── emails
-
-LinkedIn specific
-└── jobLevel
-
-LinkedIn & Indeed specific
-└── companyIndustry
-
-Indeed specific
-├── companyAddresses
-├── companyNumEmployees
-├── companyRevenue
-├── companyDescription
-└── companyLogo
-```
-
-## Roadmap
-
-> **Note:** Only LinkedIn and Indeed scrapers are currently working. Support for Glassdoor, ZipRecruiter, Google, and other job boards is coming soon.
-
-Future features planned:
-
-- **Glassdoor support** - Scraper currently under maintenance
-- **ZipRecruiter support** - US/Canada job board (under maintenance)
-- **Google Jobs support** - Global job search (under maintenance)
-- **Additional job boards** - Bayt, Naukri, BDJobs (under maintenance)
+**Q: How do I know if a job board changed and broke scraping?**
+A: Check `result.meta.sites` — a site that used to return `ok` and now returns `empty`/`error` has changed or blocked you. This repo's daily health workflow watches for the same drift on our side.
 
 ## Credits
 
-This package is a TypeScript port of [python-jobspy](https://github.com/speedyapply/JobSpy).
+Started as a TypeScript port of [python-jobspy](https://github.com/speedyapply/JobSpy) by Cullen Watson and Zachary Hampton.
 
-**TypeScript Port Author:**
-- Alpha Romer Coma (alpharomercoma@proton.me)
-
-**Original python-jobspy Authors:**
-- Cullen Watson (cullen@cullenwatson.com)
-- Zachary Hampton (zachary@zacharysproducts.com)
+**Author:** Alpha Romer Coma (alpharomercoma@proton.me)
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE).

@@ -1,7 +1,7 @@
 {
   "name": "ts-jobspy",
-  "version": "2.0.4",
-  "description": "TypeScript job scraper for LinkedIn, Indeed, Glassdoor, ZipRecruiter, Google, Bayt, Naukri & BDJobs - A TypeScript rewrite of python-jobspy by Alpha Romer Coma",
+  "version": "3.0.0",
+  "description": "TypeScript job scraper for Indeed, LinkedIn and more - honest per-site results, strict validation, cross-site dedupe",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
