@@ -1,0 +1,39 @@
+name: Scrape Health
+
+on:
+  schedule:
+    # Daily at 06:17 UTC (off the busy top-of-hour cron slots)
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: Probe job boards for drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run scrape-health probe
+        run: node scripts/scrape-health.mjs --json scrape-health-report.json
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-health-${{ github.run_id }}
+          path: scrape-health-report.json
+          retention-days: 90

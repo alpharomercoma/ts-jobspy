@@ -1,0 +1,11 @@
+{
+  "comment": "Expected live status per site, as verified from a residential IP. CI runners use datacenter IPs, so some sites that work locally may be blocked in CI — mark those working:false with a reason so the daily health check only alerts on true regressions.",
+  "sites": {
+    "indeed": { "working": true },
+    "linkedin": { "working": true },
+    "google": {
+      "working": false,
+      "reason": "Google serves a JS-required interstitial to non-browser clients (verified 2026-08-31); protocol itself unchanged in real browsers"
+    }
+  }
+}
