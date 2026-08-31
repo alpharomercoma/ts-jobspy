@@ -1,16 +1,10 @@
 /**
- * ts-jobspy - TypeScript Job Scraper
+ * ts-jobspy — TypeScript job scraper.
  *
- * A TypeScript rewrite of python-jobspy for scraping job postings from
- * LinkedIn, Indeed, Glassdoor, ZipRecruiter, Google, Bayt, Naukri, and BDJobs.
+ * Started as a TypeScript port of python-jobspy (https://github.com/speedyapply/JobSpy)
+ * by Cullen Watson and Zachary Hampton; diverged as of v3 into its own API.
  *
- * TypeScript rewrite author:
- * - Alpha Romer Coma (alpharomercoma@proton.me)
- *
- * Original python-jobspy: https://github.com/speedyapply/JobSpy
- * Original authors:
- * - Cullen Watson (cullen@cullenwatson.com)
- * - Zachary Hampton (zachary@zacharysproducts.com)
+ * Author: Alpha Romer Coma (alpharomercoma@proton.me)
  */
 
 import {
@@ -18,7 +12,6 @@ import {
   CompensationInterval,
   Country,
   DescriptionFormat,
-  DESIRED_ORDER,
   displayLocation,
   getCountryFromString,
   type JobPost,
@@ -26,23 +19,18 @@ import {
   JobType,
   type Location,
   SalarySource,
-  type ScrapeJobsOptions,
   type Scraper,
   type ScraperInput,
   Site,
-  type SupportedSiteName,
 } from './model';
 
-import {
-  convertToAnnual,
-  createLogger,
-  extractSalary,
-  getEnumFromValue,
-  mapStrToSite,
-  setLoggerLevel,
-} from './util';
+import { convertToAnnual, createLogger, extractSalary, setLoggerLevel } from './util';
 
-// Import scrapers
+import { dedupeJobs } from './dedupe';
+import { type ResolvedOptions, resolveOptions, type ScrapeOptions } from './options';
+import type { Job, ScrapeResult, SiteMeta, SiteOutcome } from './result';
+
+// Scrapers
 import { BaytScraper } from './bayt';
 import { BDJobs } from './bdjobs';
 import { Glassdoor } from './glassdoor';
@@ -52,45 +40,37 @@ import { LinkedIn } from './linkedin';
 import { Naukri } from './naukri';
 import { ZipRecruiter } from './ziprecruiter';
 
-// Export all types and classes
+// Public API surface
 export {
   BaytScraper,
   BDJobs,
   CompensationInterval,
   Country,
   DescriptionFormat,
-  DESIRED_ORDER,
   displayLocation,
   getCountryFromString,
   Glassdoor,
   Google,
   Indeed,
   JobType,
-  // Currently working scrapers
   LinkedIn,
   Naukri,
   SalarySource,
   Site,
-  // Under maintenance - still exported for future use
   ZipRecruiter,
 };
-
-// Export types separately
-export type {
-  Compensation,
-  JobPost,
-  JobResponse,
-  Location,
-  ScrapeJobsOptions,
-  Scraper,
-  ScraperInput,
-  SupportedSiteName,
-};
-
-// Export exceptions
+export type { Compensation, JobPost, JobResponse, Location, Scraper, ScraperInput };
 export * from './exception';
-
-// Export utilities
+export {
+  type DedupeMode,
+  type GoogleOptions,
+  type LinkedInOptions,
+  type ScrapeOptions,
+  type SiteName,
+  UNDER_MAINTENANCE_SITES,
+  WORKING_SITES,
+} from './options';
+export type { Job, ScrapeMeta, ScrapeResult, SiteMeta, SiteStatus } from './result';
 export {
   convertToAnnual,
   createLogger,
@@ -102,14 +82,6 @@ export {
 
 const log = createLogger('Main');
 
-/**
- * Scraper mapping
- */
-/**
- * Scraper mapping
- * Note: Only LinkedIn and Indeed are currently working.
- * Other scrapers are under maintenance and may not function properly.
- */
 const SCRAPER_MAPPING: Record<
   Site,
   new (options: {
@@ -120,7 +92,6 @@ const SCRAPER_MAPPING: Record<
 > = {
   [Site.LINKEDIN]: LinkedIn,
   [Site.INDEED]: Indeed,
-  // Under maintenance
   [Site.ZIP_RECRUITER]: ZipRecruiter,
   [Site.GLASSDOOR]: Glassdoor,
   [Site.GOOGLE]: Google,
@@ -129,252 +100,179 @@ const SCRAPER_MAPPING: Record<
   [Site.BDJOBS]: BDJobs,
 };
 
-/**
- * Output job data interface (flattened for export)
- */
-export interface JobData {
-  id: string | null;
-  site: string;
-  jobUrl: string;
-  jobUrlDirect: string | null;
-  title: string;
-  company: string | null;
-  location: string | null;
-  datePosted: string | null;
-  jobType: string | null;
-  salarySource: string | null;
-  interval: string | null;
-  minAmount: number | null;
-  maxAmount: number | null;
-  currency: string | null;
-  isRemote: boolean | null;
-  jobLevel: string | null;
-  jobFunction: string | null;
-  listingType: string | null;
-  emails: string | null;
-  description: string | null;
-  companyIndustry: string | null;
-  companyUrl: string | null;
-  companyLogo: string | null;
-  companyUrlDirect: string | null;
-  companyAddresses: string | null;
-  companyNumEmployees: string | null;
-  companyRevenue: string | null;
-  companyDescription: string | null;
-  // Naukri-specific
-  skills: string | null;
-  experienceRange: string | null;
-  companyRating: number | null;
-  companyReviewsCount: number | null;
-  vacancyCount: number | null;
-  workFromHomeType: string | null;
+const SITE_DISPLAY: Partial<Record<Site, string>> = {
+  [Site.LINKEDIN]: 'LinkedIn',
+  [Site.ZIP_RECRUITER]: 'ZipRecruiter',
+  [Site.BDJOBS]: 'BDJobs',
+};
+
+function displaySite(site: Site): string {
+  return SITE_DISPLAY[site] ?? site.charAt(0).toUpperCase() + site.slice(1);
 }
 
 /**
- * Main function to scrape jobs from multiple job boards concurrently
+ * Scrape job postings from one or more job boards.
+ *
+ * Sites are scraped concurrently and independently: one site failing never
+ * discards another site's results. Per-site outcomes (status, count, timing,
+ * error) are reported in `result.meta.sites`; set `strict: true` to reject
+ * instead when any requested site fails.
+ *
+ * @throws InvalidInputError when an option is invalid (never silently coerced).
  */
-export async function scrapeJobs(options: ScrapeJobsOptions = {}): Promise<JobData[]> {
-  const {
-    siteName,
-    searchTerm,
-    googleSearchTerm,
-    location,
-    distance = 50,
-    isRemote = false,
-    jobType,
-    easyApply,
-    resultsWanted = 15,
-    countryIndeed = 'usa',
-    proxies,
-    caCert,
-    descriptionFormat = 'markdown',
-    linkedinFetchDescription = false,
-    linkedinCompanyIds,
-    offset = 0,
-    hoursOld,
-    enforceAnnualSalary = false,
-    verbose = 0,
-    userAgent,
-  } = options;
+export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeResult> {
+  const resolved = resolveOptions(options);
+  setLoggerLevel(resolved.verbose);
 
-  setLoggerLevel(verbose);
-
-  // Parse job type
-  let jobTypeEnum: JobType | undefined;
-  if (jobType) {
-    try {
-      jobTypeEnum = getEnumFromValue(jobType);
-    } catch {
-      jobTypeEnum = undefined;
-    }
-  }
-
-  // Get site types
-  const getSiteTypes = (): Site[] => {
-    if (!siteName) {
-      return Object.values(Site);
-    }
-
-    if (typeof siteName === 'string') {
-      return [mapStrToSite(siteName)];
-    }
-
-    if (Array.isArray(siteName)) {
-      return siteName.map((s) => (typeof s === 'string' ? mapStrToSite(s) : s));
-    }
-
-    return [siteName];
-  };
-
-  const siteTypes = getSiteTypes();
-
-  // Parse country
-  let countryEnum: Country;
-  try {
-    countryEnum = getCountryFromString(countryIndeed);
-  } catch {
-    countryEnum = Country.USA;
-  }
-
-  // Parse description format
-  let descFormat: DescriptionFormat;
-  switch (descriptionFormat.toLowerCase()) {
-    case 'html':
-      descFormat = DescriptionFormat.HTML;
-      break;
-    case 'plain':
-      descFormat = DescriptionFormat.PLAIN;
-      break;
-    default:
-      descFormat = DescriptionFormat.MARKDOWN;
-  }
-
-  // Build scraper input
   const scraperInput: ScraperInput = {
-    siteType: siteTypes,
-    country: countryEnum,
-    searchTerm,
-    googleSearchTerm,
-    location,
-    distance,
-    isRemote,
-    jobType: jobTypeEnum,
-    easyApply,
-    descriptionFormat: descFormat,
-    linkedinFetchDescription,
-    resultsWanted,
-    linkedinCompanyIds,
-    offset,
-    hoursOld,
+    siteType: resolved.sites,
+    country: resolved.country,
+    searchTerm: resolved.searchTerm,
+    googleSearchTerm: resolved.google.searchTerm,
+    location: resolved.location,
+    distance: resolved.distance,
+    isRemote: resolved.isRemote,
+    jobType: resolved.jobType,
+    easyApply: resolved.easyApply,
+    descriptionFormat: resolved.descriptionFormat,
+    linkedinFetchDescription: resolved.linkedin.fetchDescription ?? false,
+    resultsWanted: resolved.resultsWanted,
+    linkedinCompanyIds: resolved.linkedin.companyIds,
+    offset: resolved.offset,
+    hoursOld: resolved.hoursOld,
   };
 
-  // Parse proxies
-  let proxyList: string[] | undefined;
-  if (proxies) {
-    proxyList = typeof proxies === 'string' ? [proxies] : proxies;
-  }
+  const t0 = Date.now();
 
-  // Scrape function for a single site
-  const scrapeSite = async (site: Site): Promise<{ site: string; response: JobResponse }> => {
-    const ScraperClass = SCRAPER_MAPPING[site];
-    const scraper = new ScraperClass({
-      proxies: proxyList,
-      caCert,
-      userAgent,
-    });
+  const outcomes = await Promise.all(
+    resolved.sites.map((site) => scrapeSite(site, scraperInput, resolved))
+  );
 
-    const scrapedData = await scraper.scrape(scraperInput);
-
-    const capName = site.charAt(0).toUpperCase() + site.slice(1);
-    let siteName = capName;
-    if (capName === 'Zip_recruiter') siteName = 'ZipRecruiter';
-    if (capName === 'Linkedin') siteName = 'LinkedIn';
-
-    log.info(`${siteName}: finished scraping`);
-
-    return { site, response: scrapedData };
-  };
-
-  // Scrape all sites concurrently
-  const results = await Promise.all(siteTypes.map((site) => scrapeSite(site)));
-
-  // Process results
-  const jobsData: JobData[] = [];
-
-  for (const { site, response } of results) {
-    for (const job of response.jobs) {
-      const jobData = processJobToData(job, site, countryEnum, enforceAnnualSalary);
-      jobsData.push(jobData);
+  if (resolved.strict) {
+    const failed = outcomes.filter((o) => o.error !== undefined);
+    if (failed.length > 0) {
+      throw new AggregateError(
+        failed.map((o) => (o.error instanceof Error ? o.error : new Error(String(o.error)))),
+        `Scraping failed for: ${failed.map((o) => o.site).join(', ')}`
+      );
     }
   }
 
-  // Sort by site and date_posted
-  jobsData.sort((a, b) => {
-    const siteCompare = (a.site ?? '').localeCompare(b.site ?? '');
-    if (siteCompare !== 0) return siteCompare;
+  let jobs: Job[] = [];
+  const siteMetas: SiteMeta[] = [];
 
-    // Sort by date descending (newest first)
+  for (const outcome of outcomes) {
+    for (const post of outcome.posts) {
+      jobs.push(toJob(post, outcome.site, resolved));
+    }
+    siteMetas.push({
+      site: outcome.site,
+      status: outcome.error !== undefined ? 'error' : outcome.posts.length > 0 ? 'ok' : 'empty',
+      jobs: outcome.posts.length,
+      requested: outcome.requested,
+      durationMs: outcome.durationMs,
+      ...(outcome.error !== undefined && {
+        error: {
+          name: outcome.error instanceof Error ? outcome.error.name : 'Error',
+          message: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
+        },
+      }),
+    });
+  }
+
+  // Sort by site, then newest first within each site.
+  jobs.sort((a, b) => {
+    const siteCompare = a.site.localeCompare(b.site);
+    if (siteCompare !== 0) return siteCompare;
     const dateA = a.datePosted ? new Date(a.datePosted).getTime() : 0;
     const dateB = b.datePosted ? new Date(b.datePosted).getTime() : 0;
     return dateB - dateA;
   });
 
-  return jobsData;
+  let duplicatesRemoved = 0;
+  if (resolved.dedupe !== 'none') {
+    const deduped = dedupeJobs(jobs, resolved.dedupe);
+    jobs = deduped.jobs;
+    duplicatesRemoved = deduped.removed;
+  }
+
+  return {
+    jobs,
+    meta: {
+      sites: siteMetas,
+      totalDurationMs: Date.now() - t0,
+      duplicatesRemoved,
+    },
+  };
 }
 
-/**
- * Process a JobPost into a flat JobData object
- */
-function processJobToData(
-  job: JobPost,
-  site: string,
-  countryEnum: Country,
-  enforceAnnualSalary: boolean
-): JobData {
-  // Format location
-  let locationStr: string | null = null;
-  if (job.location) {
-    locationStr = displayLocation(job.location);
+async function scrapeSite(
+  site: Site,
+  scraperInput: ScraperInput,
+  resolved: ResolvedOptions
+): Promise<SiteOutcome> {
+  const start = Date.now();
+  const requested = resolved.resultsWanted;
+  try {
+    const ScraperClass = SCRAPER_MAPPING[site];
+    const scraper = new ScraperClass({
+      proxies: resolved.proxies,
+      caCert: resolved.caCert,
+      userAgent: resolved.userAgent,
+    });
+    const response: JobResponse = await scraper.scrape(scraperInput);
+    log.info(`${displaySite(site)}: finished scraping (${response.jobs.length} jobs)`);
+    return {
+      site,
+      posts: response.jobs,
+      requested,
+      durationMs: Date.now() - start,
+    };
+  } catch (error) {
+    log.error(
+      `${displaySite(site)}: scraping failed — ${error instanceof Error ? error.message : String(error)}`
+    );
+    return {
+      site,
+      posts: [],
+      requested,
+      durationMs: Date.now() - start,
+      error,
+    };
   }
+}
 
-  // Format job type
-  let jobTypeStr: string | null = null;
-  if (job.jobType && job.jobType.length > 0) {
-    jobTypeStr = job.jobType.join(', ');
-  }
-
-  // Format emails
-  let emailsStr: string | null = null;
-  if (job.emails && job.emails.length > 0) {
-    emailsStr = job.emails.join(', ');
-  }
-
-  // Handle compensation
+/** Flatten a scraper's JobPost into the public Job shape. */
+function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
   let interval: string | null = null;
   let minAmount: number | null = null;
   let maxAmount: number | null = null;
   let currency: string | null = null;
   let salarySource: string | null = null;
 
-  if (job.compensation) {
-    interval = job.compensation.interval ?? null;
-    minAmount = job.compensation.minAmount ?? null;
-    maxAmount = job.compensation.maxAmount ?? null;
-    currency = job.compensation.currency ?? 'USD';
+  if (post.compensation) {
+    interval = post.compensation.interval ?? null;
+    minAmount = post.compensation.minAmount ?? null;
+    maxAmount = post.compensation.maxAmount ?? null;
+    currency = post.compensation.currency ?? 'USD';
     salarySource = SalarySource.DIRECT_DATA;
 
-    // Enforce annual salary if requested
-    if (enforceAnnualSalary && interval && interval !== 'yearly' && minAmount && maxAmount) {
+    if (
+      resolved.enforceAnnualSalary &&
+      interval &&
+      interval !== 'yearly' &&
+      minAmount &&
+      maxAmount
+    ) {
       const data = { interval, minAmount, maxAmount };
       convertToAnnual(data);
       interval = data.interval;
       minAmount = data.minAmount;
       maxAmount = data.maxAmount;
     }
-  } else if (countryEnum === Country.USA && job.description) {
-    // Try to extract salary from description
-    const extracted = extractSalary(job.description, {
-      enforceAnnualSalary,
+  } else if (resolved.country === Country.USA && post.description) {
+    const extracted = extractSalary(post.description, {
+      enforceAnnualSalary: resolved.enforceAnnualSalary,
     });
     if (extracted.minAmount && extracted.maxAmount) {
       interval = extracted.interval;
@@ -385,60 +283,46 @@ function processJobToData(
     }
   }
 
-  // Clear salary source if no salary data
   if (!minAmount) {
     salarySource = null;
   }
 
-  // Format date
-  let datePostedStr: string | null = null;
-  if (job.datePosted) {
-    datePostedStr = job.datePosted.toISOString().split('T')[0];
-  }
-
-  // Format skills
-  let skillsStr: string | null = null;
-  if (job.skills && job.skills.length > 0) {
-    skillsStr = job.skills.join(', ');
-  }
-
   return {
-    id: job.id,
+    id: post.id,
     site,
-    jobUrl: job.jobUrl,
-    jobUrlDirect: job.jobUrlDirect ?? null,
-    title: job.title,
-    company: job.companyName,
-    location: locationStr,
-    datePosted: datePostedStr,
-    jobType: jobTypeStr,
+    jobUrl: post.jobUrl,
+    jobUrlDirect: post.jobUrlDirect ?? null,
+    title: post.title,
+    company: post.companyName,
+    location: post.location ? displayLocation(post.location) : null,
+    datePosted: post.datePosted ? post.datePosted.toISOString().split('T')[0] : null,
+    jobTypes: post.jobType ?? [],
     salarySource,
     interval,
     minAmount,
     maxAmount,
     currency,
-    isRemote: job.isRemote ?? null,
-    jobLevel: job.jobLevel ?? null,
-    jobFunction: job.jobFunction ?? null,
-    listingType: job.listingType ?? null,
-    emails: emailsStr,
-    description: job.description ?? null,
-    companyIndustry: job.companyIndustry ?? null,
-    companyUrl: job.companyUrl ?? null,
-    companyLogo: job.companyLogo ?? null,
-    companyUrlDirect: job.companyUrlDirect ?? null,
-    companyAddresses: job.companyAddresses ?? null,
-    companyNumEmployees: job.companyNumEmployees ?? null,
-    companyRevenue: job.companyRevenue ?? null,
-    companyDescription: job.companyDescription ?? null,
-    skills: skillsStr,
-    experienceRange: job.experienceRange ?? null,
-    companyRating: job.companyRating ?? null,
-    companyReviewsCount: job.companyReviewsCount ?? null,
-    vacancyCount: job.vacancyCount ?? null,
-    workFromHomeType: job.workFromHomeType ?? null,
+    isRemote: post.isRemote ?? null,
+    jobLevel: post.jobLevel ?? null,
+    jobFunction: post.jobFunction ?? null,
+    listingType: post.listingType ?? null,
+    emails: post.emails ?? [],
+    description: post.description ?? null,
+    companyIndustry: post.companyIndustry ?? null,
+    companyUrl: post.companyUrl ?? null,
+    companyLogo: post.companyLogo ?? null,
+    companyUrlDirect: post.companyUrlDirect ?? null,
+    companyAddresses: post.companyAddresses ?? null,
+    companyNumEmployees: post.companyNumEmployees ?? null,
+    companyRevenue: post.companyRevenue ?? null,
+    companyDescription: post.companyDescription ?? null,
+    skills: post.skills ?? [],
+    experienceRange: post.experienceRange ?? null,
+    companyRating: post.companyRating ?? null,
+    companyReviewsCount: post.companyReviewsCount ?? null,
+    vacancyCount: post.vacancyCount ?? null,
+    workFromHomeType: post.workFromHomeType ?? null,
   };
 }
 
-// Default export
 export default scrapeJobs;

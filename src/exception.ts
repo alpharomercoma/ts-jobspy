@@ -106,6 +106,17 @@ export class BDJobsException extends JobSpyException {
 }
 
 /**
+ * Invalid input passed to scrapeJobs
+ */
+export class InvalidInputError extends JobSpyException {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidInputError';
+    Object.setPrototypeOf(this, InvalidInputError.prototype);
+  }
+}
+
+/**
  * Rate limit exception
  */
 export class RateLimitException extends JobSpyException {
