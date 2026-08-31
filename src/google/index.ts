@@ -302,4 +302,3 @@ export class Google implements Scraper {
   }
 }
 
-export default Google;

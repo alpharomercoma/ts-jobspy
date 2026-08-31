@@ -70,7 +70,7 @@ export {
   UNDER_MAINTENANCE_SITES,
   WORKING_SITES,
 } from './options';
-export type { Job, ScrapeMeta, ScrapeResult, SiteMeta, SiteStatus } from './result';
+export type { Job, ScrapeMeta, ScrapeResult, SiteError, SiteMeta, SiteStatus } from './result';
 export {
   convertToAnnual,
   createLogger,
@@ -443,4 +443,3 @@ function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
   };
 }
 
-export default scrapeJobs;

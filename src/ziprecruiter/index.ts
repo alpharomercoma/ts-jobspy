@@ -326,4 +326,3 @@ export class ZipRecruiter implements Scraper {
   }
 }
 
-export default ZipRecruiter;

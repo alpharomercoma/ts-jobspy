@@ -324,4 +324,3 @@ export class BDJobs implements Scraper {
   }
 }
 
-export default BDJobs;

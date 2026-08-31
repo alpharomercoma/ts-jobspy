@@ -4,7 +4,7 @@
 
 import { createLogger } from '../util';
 
-export const log = createLogger('Google');
+const log = createLogger('Google');
 
 /**
  * Recursively find job info in nested data structure

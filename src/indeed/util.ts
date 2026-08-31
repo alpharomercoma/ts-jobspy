@@ -106,7 +106,7 @@ export function isJobRemote(job: IndeedJob, description: string): boolean {
 /**
  * Get compensation interval from string
  */
-export function getCompensationInterval(interval: string): CompensationInterval | null {
+function getCompensationInterval(interval: string): CompensationInterval | null {
   const intervalMapping: Record<string, CompensationInterval> = {
     DAY: CompensationInterval.DAILY,
     YEAR: CompensationInterval.YEARLY,

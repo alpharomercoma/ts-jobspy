@@ -173,4 +173,3 @@ export class BaytScraper implements Scraper {
   }
 }
 
-export default BaytScraper;

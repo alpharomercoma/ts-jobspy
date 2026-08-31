@@ -17,7 +17,7 @@ import { CompensationInterval, JobType, JOB_TYPE_VARIATIONS, Site } from './mode
 /**
  * Log levels
  */
-export enum LogLevel {
+enum LogLevel {
   ERROR = 0,
   WARNING = 1,
   INFO = 2,
@@ -115,7 +115,7 @@ function formatProxy(proxy: string): ProxyConfig {
 /**
  * Rotating proxy session for load balancing requests across proxies
  */
-export class RotatingProxySession {
+class RotatingProxySession {
   private proxies: ProxyConfig[];
   private proxyIndex: number = 0;
 
@@ -515,25 +515,7 @@ export function randomDelay(min: number, max: number): Promise<void> {
   return sleep(delay * 1000);
 }
 
-/**
- * Parse date from string
- */
-export function parseDate(dateStr: string): Date | null {
-  if (!dateStr) return null;
 
-  const date = new Date(dateStr);
-  if (!isNaN(date.getTime())) {
-    return date;
-  }
-  return null;
-}
-
-/**
- * Format date as YYYY-MM-DD
- */
-export function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0];
-}
 
 /**
  * Check if job is remote based on text content

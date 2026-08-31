@@ -590,19 +590,6 @@ export interface ScraperInput {
   hoursOld?: number;
 }
 
-/**
- * Default scraper input values
- */
-export const DEFAULT_SCRAPER_INPUT: Partial<ScraperInput> = {
-  country: Country.USA,
-  distance: 50,
-  isRemote: false,
-  offset: 0,
-  linkedinFetchDescription: false,
-  descriptionFormat: DescriptionFormat.MARKDOWN,
-  requestTimeout: 60,
-  resultsWanted: 15,
-};
 
 /**
  * Abstract base class for scrapers

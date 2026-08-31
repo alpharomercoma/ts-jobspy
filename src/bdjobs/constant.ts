@@ -22,11 +22,3 @@ export const JOB_SELECTORS: string[] = [
   'div.norm-jobs-wrapper',
   'div.featured-wrap',
 ];
-
-export const DATE_FORMATS: string[] = [
-  'DD MMM YYYY',
-  'DD-MMM-YYYY',
-  'DD MMMM YYYY',
-  'MMMM DD, YYYY',
-  'DD/MM/YYYY',
-];

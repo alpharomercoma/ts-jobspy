@@ -50,3 +50,8 @@ meta.sites; // per-site status/count/duration/error — check this to know how t
 - `meta.totalDurationMs`, `meta.sites[].durationMs` — built-in timing.
 - Exported constants `WORKING_SITES` / `UNDER_MAINTENANCE_SITES` and types
   `ScrapeOptions`, `ScrapeResult`, `Job`, `SiteMeta` for full type-safe usage.
+
+## v3.0 also removes the default export
+
+`import scrapeJobs from 'ts-jobspy'` no longer works — use the named import:
+`import { scrapeJobs } from 'ts-jobspy'`.

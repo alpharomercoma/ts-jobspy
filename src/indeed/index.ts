@@ -348,4 +348,3 @@ export class Indeed implements Scraper {
   }
 }
 
-export default Indeed;

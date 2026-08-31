@@ -443,4 +443,3 @@ export class Glassdoor implements Scraper {
   }
 }
 
-export default Glassdoor;

@@ -425,4 +425,3 @@ export class LinkedIn implements Scraper {
   }
 }
 
-export default LinkedIn;

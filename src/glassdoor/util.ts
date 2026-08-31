@@ -2,7 +2,7 @@
  * Glassdoor scraper utilities
  */
 
-import { type Compensation, CompensationInterval, type Location, JobType } from '../model';
+import { type Compensation, CompensationInterval, type Location } from '../model';
 
 interface PayPeriodAdjustedPay {
   p10?: number;
@@ -69,23 +69,6 @@ function getInterval(payPeriod: string): CompensationInterval | undefined {
   return mapping[payPeriod.toUpperCase()];
 }
 
-/**
- * Get JobType enum from string
- */
-export function getJobTypeEnum(jobTypeStr: string): JobType[] | null {
-  const normalized = jobTypeStr.toLowerCase().replace(/[-\s]/g, '');
-
-  const mapping: Record<string, JobType> = {
-    fulltime: JobType.FULL_TIME,
-    parttime: JobType.PART_TIME,
-    contract: JobType.CONTRACT,
-    temporary: JobType.TEMPORARY,
-    internship: JobType.INTERNSHIP,
-  };
-
-  const jobType = mapping[normalized];
-  return jobType ? [jobType] : null;
-}
 
 /**
  * Parse location from location name string
