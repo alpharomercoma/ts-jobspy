@@ -2,7 +2,7 @@
  * ZipRecruiter scraper utilities
  */
 
-import { JobType, ScraperInput } from '../model';
+import { JobType, type ScraperInput } from '../model';
 import { getEnumFromJobType } from '../util';
 
 /**
@@ -32,8 +32,7 @@ export function addParams(scraperInput: ScraperInput): Record<string, string | n
   };
 
   if (scraperInput.jobType) {
-    params.employment_type =
-      jobTypeMap[scraperInput.jobType] ?? scraperInput.jobType;
+    params.employment_type = jobTypeMap[scraperInput.jobType] ?? scraperInput.jobType;
   }
 
   if (scraperInput.easyApply) {
@@ -50,9 +49,7 @@ export function addParams(scraperInput: ScraperInput): Record<string, string | n
 
   // Filter out empty/null values
   return Object.fromEntries(
-    Object.entries(params).filter(
-      ([_, v]) => v !== null && v !== undefined && v !== ''
-    )
+    Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '')
   );
 }
 

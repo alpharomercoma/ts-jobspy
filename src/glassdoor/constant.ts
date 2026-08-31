@@ -11,8 +11,7 @@ export const HEADERS: Record<string, string> = {
   'content-type': 'application/json',
   origin: 'https://www.glassdoor.com',
   referer: 'https://www.glassdoor.com/',
-  'sec-ch-ua':
-    '"Chromium";v="118", "Google Chrome";v="118", "Not=A?Brand";v="99"',
+  'sec-ch-ua': '"Chromium";v="118", "Google Chrome";v="118", "Not=A?Brand";v="99"',
   'sec-ch-ua-mobile': '?0',
   'sec-ch-ua-platform': '"macOS"',
   'sec-fetch-dest': 'empty',

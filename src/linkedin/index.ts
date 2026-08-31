@@ -5,18 +5,18 @@
  * Original: https://github.com/speedyapply/JobSpy
  */
 
-import { AxiosInstance } from 'axios';
+import type { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
 import {
-  JobPost,
-  JobResponse,
-  Location,
-  ScraperInput,
+  type JobPost,
+  type JobResponse,
+  type Location,
+  type ScraperInput,
   Site,
   Country,
-  Compensation,
+  type Compensation,
   DescriptionFormat,
-  Scraper,
+  type Scraper,
   getCountryFromString,
 } from '../model';
 import {
@@ -86,9 +86,7 @@ export class LinkedIn implements Scraper {
 
     while (continueSearch()) {
       requestCount += 1;
-      log.info(
-        `search page: ${requestCount} / ${Math.ceil(resultsWanted / 10)}`
-      );
+      log.info(`search page: ${requestCount} / ${Math.ceil(resultsWanted / 10)}`);
 
       const params: Record<string, string | number | undefined> = {
         keywords: input.searchTerm,
@@ -108,9 +106,7 @@ export class LinkedIn implements Scraper {
 
       // Filter out undefined values
       const filteredParams = Object.fromEntries(
-        Object.entries(params).filter(
-          ([_, v]) => v !== undefined && v !== null && v !== ''
-        )
+        Object.entries(params).filter(([_, v]) => v !== undefined && v !== null && v !== '')
       );
 
       try {
@@ -152,11 +148,7 @@ export class LinkedIn implements Scraper {
 
             try {
               const fetchDesc = input.linkedinFetchDescription ?? false;
-              const jobPost = await this.processJob(
-                cheerio.load(jobCard),
-                jobId,
-                fetchDesc
-              );
+              const jobPost = await this.processJob(cheerio.load(jobCard), jobId, fetchDesc);
               if (jobPost) {
                 jobList.push(jobPost);
               }
@@ -297,10 +289,9 @@ export class LinkedIn implements Scraper {
     if (!this.session) return {};
 
     try {
-      const response = await this.session.get(
-        `${this.baseUrl}/jobs/view/${jobId}`,
-        { timeout: 5000 }
-      );
+      const response = await this.session.get(`${this.baseUrl}/jobs/view/${jobId}`, {
+        timeout: 5000,
+      });
 
       if (response.status < 200 || response.status >= 400) {
         return {};
@@ -334,9 +325,7 @@ export class LinkedIn implements Scraper {
       let jobFunction: string | undefined;
       const h3Tag = $('h3:contains("Job function")').first();
       if (h3Tag.length) {
-        const jobFunctionSpan = h3Tag
-          .next('span.description__job-criteria-text')
-          .first();
+        const jobFunctionSpan = h3Tag.next('span.description__job-criteria-text').first();
         if (jobFunctionSpan.length) {
           jobFunction = jobFunctionSpan.text().trim();
         }

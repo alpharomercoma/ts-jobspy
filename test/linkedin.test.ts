@@ -4,7 +4,7 @@
 
 import * as cheerio from 'cheerio';
 import { LinkedIn } from '../src';
-import { JobPost } from '../src/model';
+import type { JobPost } from '../src/model';
 
 function jobCard(timeClass: string): string {
   return `
@@ -28,9 +28,9 @@ type ProcessJob = (
 
 describe('LinkedIn processJob', () => {
   const scraper = new LinkedIn({});
-  const processJob = (
-    (scraper as unknown as { processJob: ProcessJob }).processJob
-  ).bind(scraper) as ProcessJob;
+  const processJob = (scraper as unknown as { processJob: ProcessJob }).processJob.bind(
+    scraper
+  ) as ProcessJob;
 
   it('parses datePosted from time.job-search-card__listdate', async () => {
     const job = await processJob(cheerio.load(jobCard('job-search-card__listdate')), '4242', false);
@@ -38,7 +38,11 @@ describe('LinkedIn processJob', () => {
   });
 
   it('parses datePosted from time.job-search-card__listdate--new (used for recent jobs, e.g. hoursOld filter)', async () => {
-    const job = await processJob(cheerio.load(jobCard('job-search-card__listdate--new')), '4242', false);
+    const job = await processJob(
+      cheerio.load(jobCard('job-search-card__listdate--new')),
+      '4242',
+      false
+    );
     expect(job?.datePosted?.toISOString().slice(0, 10)).toBe('2026-07-05');
   });
 });

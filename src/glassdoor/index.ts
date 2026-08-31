@@ -5,23 +5,18 @@
  * Original: https://github.com/speedyapply/JobSpy
  */
 
-import { AxiosInstance } from 'axios';
+import type { AxiosInstance } from 'axios';
 import {
-  JobPost,
-  JobResponse,
-  ScraperInput,
+  type JobPost,
+  type JobResponse,
+  type ScraperInput,
   Site,
   Country,
   DescriptionFormat,
-  Scraper,
+  type Scraper,
   getGlassdoorUrl,
 } from '../model';
-import {
-  createSession,
-  createLogger,
-  markdownConverter,
-  extractEmailsFromText,
-} from '../util';
+import { createSession, createLogger, markdownConverter, extractEmailsFromText } from '../util';
 import { HEADERS, QUERY_TEMPLATE, FALLBACK_TOKEN } from './constant';
 import { parseCompensation, parseLocation, getCursorForPage } from './util';
 
@@ -129,10 +124,7 @@ export class Glassdoor implements Scraper {
     }
 
     // Get location
-    const locationResult = await this.getLocation(
-      input.location ?? '',
-      input.isRemote ?? false
-    );
+    const locationResult = await this.getLocation(input.location ?? '', input.isRemote ?? false);
 
     if (!locationResult) {
       log.error('Glassdoor: location not parsed');
@@ -215,10 +207,7 @@ export class Glassdoor implements Scraper {
         }
       }
 
-      const nextCursor = getCursorForPage(
-        resJson.data.jobListings.paginationCursors,
-        pageNum + 1
-      );
+      const nextCursor = getCursorForPage(resJson.data.jobListings.paginationCursors, pageNum + 1);
 
       return { jobs, nextCursor };
     } catch (e) {
@@ -231,9 +220,7 @@ export class Glassdoor implements Scraper {
     if (!this.session) return null;
 
     try {
-      const response = await this.session.get(
-        `${this.baseUrl}Job/computer-science-jobs.htm`
-      );
+      const response = await this.session.get(`${this.baseUrl}Job/computer-science-jobs.htm`);
       const pattern = /"token":\s*"([^"]+)"/;
       const htmlData = response.data as string;
       const match = htmlData.match(pattern);
@@ -243,9 +230,7 @@ export class Glassdoor implements Scraper {
     }
   }
 
-  private async processJob(
-    jobData: GlassdoorJobListing
-  ): Promise<JobPost | null> {
+  private async processJob(jobData: GlassdoorJobListing): Promise<JobPost | null> {
     const jobId = jobData.jobview.job.listingId;
     const jobUrl = `${this.baseUrl}job-listing/j?jl=${jobId}`;
 
@@ -358,10 +343,7 @@ export class Glassdoor implements Scraper {
     }
   }
 
-  private async getLocation(
-    location: string,
-    isRemote: boolean
-  ): Promise<LocationResult | null> {
+  private async getLocation(location: string, isRemote: boolean): Promise<LocationResult | null> {
     if (!location || isRemote) {
       return { locationId: '11047', locationType: 'STATE' };
     }

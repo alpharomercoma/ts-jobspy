@@ -2,8 +2,8 @@
  * LinkedIn scraper utilities
  */
 
-import * as cheerio from 'cheerio';
-import { JobType, Location } from '../model';
+import type * as cheerio from 'cheerio';
+import { JobType, type Location } from '../model';
 import { getEnumFromJobType } from '../util';
 
 /**
@@ -24,15 +24,11 @@ export function jobTypeCode(jobType: JobType): string {
  * Parse job type from LinkedIn job page
  */
 export function parseJobType($: cheerio.CheerioAPI): JobType[] {
-  const h3Tag = $(
-    'h3.description__job-criteria-subheader:contains("Employment type")'
-  ).first();
+  const h3Tag = $('h3.description__job-criteria-subheader:contains("Employment type")').first();
 
   if (h3Tag.length) {
     const employmentTypeSpan = h3Tag
-      .next(
-        'span.description__job-criteria-text.description__job-criteria-text--criteria'
-      )
+      .next('span.description__job-criteria-text.description__job-criteria-text--criteria')
       .first();
 
     if (employmentTypeSpan.length) {
@@ -51,15 +47,11 @@ export function parseJobType($: cheerio.CheerioAPI): JobType[] {
  * Parse job level from LinkedIn job page
  */
 export function parseJobLevel($: cheerio.CheerioAPI): string | null {
-  const h3Tag = $(
-    'h3.description__job-criteria-subheader:contains("Seniority level")'
-  ).first();
+  const h3Tag = $('h3.description__job-criteria-subheader:contains("Seniority level")').first();
 
   if (h3Tag.length) {
     const jobLevelSpan = h3Tag
-      .next(
-        'span.description__job-criteria-text.description__job-criteria-text--criteria'
-      )
+      .next('span.description__job-criteria-text.description__job-criteria-text--criteria')
       .first();
 
     if (jobLevelSpan.length) {
@@ -74,15 +66,11 @@ export function parseJobLevel($: cheerio.CheerioAPI): string | null {
  * Parse company industry from LinkedIn job page
  */
 export function parseCompanyIndustry($: cheerio.CheerioAPI): string | null {
-  const h3Tag = $(
-    'h3.description__job-criteria-subheader:contains("Industries")'
-  ).first();
+  const h3Tag = $('h3.description__job-criteria-subheader:contains("Industries")').first();
 
   if (h3Tag.length) {
     const industrySpan = h3Tag
-      .next(
-        'span.description__job-criteria-text.description__job-criteria-text--criteria'
-      )
+      .next('span.description__job-criteria-text.description__job-criteria-text--criteria')
       .first();
 
     if (industrySpan.length) {

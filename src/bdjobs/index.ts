@@ -5,15 +5,15 @@
  * Original: https://github.com/speedyapply/JobSpy
  */
 
-import { AxiosInstance } from 'axios';
+import type { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
 import {
-  JobPost,
-  JobResponse,
-  ScraperInput,
+  type JobPost,
+  type JobResponse,
+  type ScraperInput,
   Site,
   DescriptionFormat,
-  Scraper,
+  type Scraper,
 } from '../model';
 import {
   createSession,
@@ -245,13 +245,18 @@ export class BDJobs implements Scraper {
       const jobContentDiv = $('div.jobcontent');
       if (jobContentDiv.length) {
         // Look for responsibilities section
-        const responsibilitiesHeading = jobContentDiv.find('h4#job_resp, h4:contains("responsibilities"), h5:contains("responsibilities")').first();
+        const responsibilitiesHeading = jobContentDiv
+          .find('h4#job_resp, h4:contains("responsibilities"), h5:contains("responsibilities")')
+          .first();
 
         if (responsibilitiesHeading.length) {
           const responsibilitiesElements: string[] = [];
           let sibling = responsibilitiesHeading.next();
 
-          while (sibling.length && !['hr', 'h4', 'h5'].includes(sibling.prop('tagName')?.toLowerCase() ?? '')) {
+          while (
+            sibling.length &&
+            !['hr', 'h4', 'h5'].includes(sibling.prop('tagName')?.toLowerCase() ?? '')
+          ) {
             if (sibling.is('ul')) {
               sibling.find('li').each((_, li) => {
                 responsibilitiesElements.push($(li).text().trim());
@@ -273,9 +278,7 @@ export class BDJobs implements Scraper {
         ).first();
         if (descriptionElem.length) {
           const cleanedHtml = removeAttributes(descriptionElem.html() ?? '');
-          if (
-            this.scraperInput?.descriptionFormat === DescriptionFormat.MARKDOWN
-          ) {
+          if (this.scraperInput?.descriptionFormat === DescriptionFormat.MARKDOWN) {
             description = markdownConverter(cleanedHtml) ?? '';
           } else {
             description = cleanedHtml;

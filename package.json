@@ -18,13 +18,14 @@
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --ext .ts --fix",
+    "lint": "biome check src test",
+    "lint:fix": "biome check --write src test",
     "test": "jest",
     "test:integration": "jest test/_custom/integration --testPathIgnorePatterns=/node_modules/ --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "format": "biome format --write src test"
   },
   "keywords": [
     "jobs-scraper",
@@ -70,12 +71,10 @@
     "turndown": "^7.2.4"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.11",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.16",
     "@types/turndown": "^5.0.4",
-    "@typescript-eslint/eslint-plugin": "^8.62.1",
-    "@typescript-eslint/parser": "^8.62.1",
-    "eslint": "^8.56.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.4.12",
     "tsup": "^8.0.1",

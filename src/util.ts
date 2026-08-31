@@ -6,10 +6,7 @@
  * Original: https://github.com/speedyapply/JobSpy
  */
 
-import axios, {
-  AxiosInstance,
-  InternalAxiosRequestConfig,
-} from 'axios';
+import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 import axiosRetry from 'axios-retry';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
@@ -179,7 +176,9 @@ export function createSession(options: SessionOptions = {}): AxiosInstance {
     timeout,
     validateStatus: (status) => status >= 200 && status < 400,
     headers: {
-      'User-Agent': userAgent ?? 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent':
+        userAgent ??
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     },
   });
 
@@ -399,7 +398,8 @@ export function extractSalary(
 
   if (!salaryStr) return nullResult;
 
-  const minMaxPattern = /\$(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)\s*[-—–]\s*(?:\$)?(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)/;
+  const minMaxPattern =
+    /\$(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)\s*[-—–]\s*(?:\$)?(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)/;
 
   const toInt = (s: string): number => parseInt(s.replace(/,/g, ''), 10);
   const convertHourlyToAnnual = (hourly: number): number => hourly * 2080;

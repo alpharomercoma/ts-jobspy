@@ -2,7 +2,7 @@
  * Naukri scraper utilities
  */
 
-import { JobType, Location } from '../model';
+import { JobType, type Location } from '../model';
 
 /**
  * Parse job type from description
@@ -48,11 +48,7 @@ export function parseCompanyIndustry(description: string | null): string | null 
 /**
  * Check if job is remote
  */
-export function isJobRemote(
-  title: string,
-  description: string,
-  location: Location
-): boolean {
+export function isJobRemote(title: string, description: string, location: Location): boolean {
   const remoteKeywords = ['remote', 'work from home', 'wfh'];
 
   const locationStr = [

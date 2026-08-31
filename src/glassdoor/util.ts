@@ -2,7 +2,7 @@
  * Glassdoor scraper utilities
  */
 
-import { Compensation, CompensationInterval, Location, JobType } from '../model';
+import { type Compensation, CompensationInterval, type Location, JobType } from '../model';
 
 interface PayPeriodAdjustedPay {
   p10?: number;
@@ -41,10 +41,8 @@ export function parseCompensation(data: GlassdoorHeader): Compensation | null {
     interval = getInterval(payPeriod);
   }
 
-  const minAmount =
-    adjustedPay.p10 !== undefined ? Math.floor(adjustedPay.p10) : undefined;
-  const maxAmount =
-    adjustedPay.p90 !== undefined ? Math.floor(adjustedPay.p90) : undefined;
+  const minAmount = adjustedPay.p10 !== undefined ? Math.floor(adjustedPay.p10) : undefined;
+  const maxAmount = adjustedPay.p90 !== undefined ? Math.floor(adjustedPay.p90) : undefined;
 
   return {
     interval,

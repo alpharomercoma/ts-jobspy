@@ -2,9 +2,9 @@
  * BDJobs scraper utilities
  */
 
-import * as cheerio from 'cheerio';
+import type * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
-import { Country, Location } from '../model';
+import { Country, type Location } from '../model';
 import { JOB_SELECTORS } from './constant';
 
 /**

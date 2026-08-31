@@ -104,13 +104,11 @@ export const JOB_SEARCH_QUERY = `
 export const API_HEADERS: Record<string, string> = {
   Host: 'apis.indeed.com',
   'content-type': 'application/json',
-  'indeed-api-key':
-    '161092c2017b5bbab13edb12461a62d5a833871e7cad6d9d475304573de67ac8',
+  'indeed-api-key': '161092c2017b5bbab13edb12461a62d5a833871e7cad6d9d475304573de67ac8',
   accept: 'application/json',
   'indeed-locale': 'en-US',
   'accept-language': 'en-US,en;q=0.9',
   'user-agent':
     'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Indeed App 193.1',
-  'indeed-app-info':
-    'appv=193.1; appid=com.indeed.jobsearch; osv=16.6.1; os=ios; dtype=phone',
+  'indeed-app-info': 'appv=193.1; appid=com.indeed.jobsearch; osv=16.6.1; os=ios; dtype=phone',
 };

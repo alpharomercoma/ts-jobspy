@@ -2,7 +2,7 @@
  * Indeed scraper utilities
  */
 
-import { Compensation, CompensationInterval, JobType } from '../model';
+import { type Compensation, CompensationInterval, type JobType } from '../model';
 import { getEnumFromJobType } from '../util';
 
 interface IndeedAttribute {
@@ -47,10 +47,7 @@ export function getJobType(attributes: IndeedAttribute[]): JobType[] {
   const jobTypes: JobType[] = [];
 
   for (const attribute of attributes) {
-    const jobTypeStr = attribute.label
-      .replace(/-/g, '')
-      .replace(/\s/g, '')
-      .toLowerCase();
+    const jobTypeStr = attribute.label.replace(/-/g, '').replace(/\s/g, '').toLowerCase();
     const jobType = getEnumFromJobType(jobTypeStr);
     if (jobType) {
       jobTypes.push(jobType);
@@ -63,9 +60,7 @@ export function getJobType(attributes: IndeedAttribute[]): JobType[] {
 /**
  * Get compensation from Indeed compensation object
  */
-export function getCompensation(
-  compensation: IndeedCompensation | null
-): Compensation | null {
+export function getCompensation(compensation: IndeedCompensation | null): Compensation | null {
   if (!compensation) return null;
 
   const baseSalary = compensation.baseSalary ?? compensation.estimated?.baseSalary;
@@ -77,8 +72,7 @@ export function getCompensation(
   const minRange = baseSalary.range?.min;
   const maxRange = baseSalary.range?.max;
 
-  const currency =
-    compensation.estimated?.currencyCode ?? compensation.currencyCode;
+  const currency = compensation.estimated?.currencyCode ?? compensation.currencyCode;
 
   return {
     interval,
@@ -112,9 +106,7 @@ export function isJobRemote(job: IndeedJob, description: string): boolean {
 /**
  * Get compensation interval from string
  */
-export function getCompensationInterval(
-  interval: string
-): CompensationInterval | null {
+export function getCompensationInterval(interval: string): CompensationInterval | null {
   const intervalMapping: Record<string, CompensationInterval> = {
     DAY: CompensationInterval.DAILY,
     YEAR: CompensationInterval.YEARLY,

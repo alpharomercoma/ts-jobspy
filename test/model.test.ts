@@ -3,16 +3,16 @@
  */
 
 import {
-    CompensationInterval,
-    Country,
-    COUNTRY_CONFIG,
-    DescriptionFormat,
-    displayLocation,
-    getCountryFromString,
-    getGlassdoorUrl,
-    getIndeedDomainValue,
-    JobType,
-    Site,
+  CompensationInterval,
+  Country,
+  COUNTRY_CONFIG,
+  DescriptionFormat,
+  displayLocation,
+  getCountryFromString,
+  getGlassdoorUrl,
+  getIndeedDomainValue,
+  JobType,
+  Site,
 } from '../src/model';
 
 describe('Model Tests', () => {

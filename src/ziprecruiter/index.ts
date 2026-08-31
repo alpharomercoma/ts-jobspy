@@ -5,18 +5,18 @@
  * Original: https://github.com/speedyapply/JobSpy
  */
 
-import { AxiosInstance } from 'axios';
+import type { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
 import {
-  JobPost,
-  JobResponse,
-  Location,
-  ScraperInput,
+  type JobPost,
+  type JobResponse,
+  type Location,
+  type ScraperInput,
   Site,
   Country,
-  Compensation,
+  type Compensation,
   DescriptionFormat,
-  Scraper,
+  type Scraper,
   getCountryFromString,
 } from '../model';
 import {
@@ -152,9 +152,7 @@ export class ZipRecruiter implements Scraper {
       const jobsList = resData.jobs ?? [];
       const nextContinueToken = resData.continue ?? null;
 
-      const processedJobs = await Promise.all(
-        jobsList.map((job) => this.processJob(job))
-      );
+      const processedJobs = await Promise.all(jobsList.map((job) => this.processJob(job)));
 
       return {
         jobs: processedJobs.filter((job): job is JobPost => job !== null),
@@ -202,9 +200,7 @@ export class ZipRecruiter implements Scraper {
       country: countryEnum,
     };
 
-    const jobType = getJobTypeEnum(
-      (job.employment_type ?? '').replace(/_/g, '').toLowerCase()
-    );
+    const jobType = getJobTypeEnum((job.employment_type ?? '').replace(/_/g, '').toLowerCase());
 
     let datePosted: Date | null = null;
     if (job.posted_time) {
@@ -295,10 +291,7 @@ export class ZipRecruiter implements Scraper {
         jobUrlDirect = null;
       }
 
-      if (
-        this.scraperInput?.descriptionFormat === DescriptionFormat.MARKDOWN &&
-        descriptionFull
-      ) {
+      if (this.scraperInput?.descriptionFormat === DescriptionFormat.MARKDOWN && descriptionFull) {
         descriptionFull = markdownConverter(descriptionFull) ?? descriptionFull;
       }
 

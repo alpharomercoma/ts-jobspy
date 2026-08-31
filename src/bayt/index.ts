@@ -5,16 +5,16 @@
  * Original: https://github.com/speedyapply/JobSpy
  */
 
-import { AxiosInstance } from 'axios';
+import type { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
 import {
-  JobPost,
-  JobResponse,
-  Location,
-  ScraperInput,
+  type JobPost,
+  type JobResponse,
+  type Location,
+  type ScraperInput,
   Site,
   Country,
-  Scraper,
+  type Scraper,
 } from '../model';
 import { createSession, createLogger, randomDelay } from '../util';
 

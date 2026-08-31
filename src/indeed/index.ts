@@ -5,25 +5,20 @@
  * Original: https://github.com/speedyapply/JobSpy
  */
 
-import { AxiosInstance } from 'axios';
+import type { AxiosInstance } from 'axios';
 import {
-  JobPost,
-  JobResponse,
-  Location,
-  ScraperInput,
+  type JobPost,
+  type JobResponse,
+  type Location,
+  type ScraperInput,
   Site,
   JobType,
   Country,
   DescriptionFormat,
-  Scraper,
+  type Scraper,
   getIndeedDomainValue,
 } from '../model';
-import {
-  createSession,
-  createLogger,
-  markdownConverter,
-  extractEmailsFromText,
-} from '../util';
+import { createSession, createLogger, markdownConverter, extractEmailsFromText } from '../util';
 import { JOB_SEARCH_QUERY, API_HEADERS } from './constant';
 import { getJobType, getCompensation, isJobRemote } from './util';
 
@@ -116,9 +111,7 @@ export class Indeed implements Scraper {
       caCert: this.caCert,
     });
 
-    const { domain, apiCode } = getIndeedDomainValue(
-      input.country ?? Country.USA
-    );
+    const { domain, apiCode } = getIndeedDomainValue(input.country ?? Country.USA);
     this.apiCountryCode = apiCode;
     this.baseUrl = `https://${domain}.indeed.com`;
 
@@ -132,9 +125,7 @@ export class Indeed implements Scraper {
     const offset = input.offset ?? 0;
 
     while (this.seenUrls.size < resultsWanted + offset) {
-      log.info(
-        `search page: ${page} / ${Math.ceil(resultsWanted / this.jobsPerPage)}`
-      );
+      log.info(`search page: ${page} / ${Math.ceil(resultsWanted / this.jobsPerPage)}`);
 
       const { jobs, nextCursor } = await this.scrapePage(cursor);
 
@@ -165,10 +156,7 @@ export class Indeed implements Scraper {
     const filters = this.buildFilters();
     const searchTerm = this.scraperInput.searchTerm?.replace(/"/g, '\\"') ?? '';
 
-    const query = JOB_SEARCH_QUERY.replace(
-      '{what}',
-      searchTerm ? `what: "${searchTerm}"` : ''
-    )
+    const query = JOB_SEARCH_QUERY.replace('{what}', searchTerm ? `what: "${searchTerm}"` : '')
       .replace(
         '{location}',
         this.scraperInput.location
@@ -184,14 +172,10 @@ export class Indeed implements Scraper {
     headersTemp['indeed-co'] = this.apiCountryCode;
 
     try {
-      const response = await this.session.post<IndeedApiResponse>(
-        this.apiUrl,
-        payload,
-        {
-          headers: headersTemp,
-          timeout: 10000,
-        }
-      );
+      const response = await this.session.post<IndeedApiResponse>(this.apiUrl, payload, {
+        headers: headersTemp,
+        timeout: 10000,
+      });
 
       if (response.status < 200 || response.status >= 400) {
         log.info(
@@ -313,12 +297,8 @@ export class Indeed implements Scraper {
 
     let companyIndustry: string | undefined;
     if (employerDetails.industry) {
-      companyIndustry = employerDetails.industry
-        .replace('Iv1', '')
-        .replace(/_/g, ' ')
-        .trim();
-      companyIndustry =
-        companyIndustry.charAt(0).toUpperCase() + companyIndustry.slice(1);
+      companyIndustry = employerDetails.industry.replace('Iv1', '').replace(/_/g, ' ').trim();
+      companyIndustry = companyIndustry.charAt(0).toUpperCase() + companyIndustry.slice(1);
     }
 
     return {

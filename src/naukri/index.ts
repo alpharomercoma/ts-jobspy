@@ -5,24 +5,24 @@
  * Original: https://github.com/speedyapply/JobSpy
  */
 
-import { AxiosInstance } from 'axios';
+import type { AxiosInstance } from 'axios';
 import {
-    Compensation,
-    Country,
-    DescriptionFormat,
-    JobPost,
-    JobResponse,
-    Location,
-    Scraper,
-    ScraperInput,
-    Site,
+  type Compensation,
+  Country,
+  DescriptionFormat,
+  type JobPost,
+  type JobResponse,
+  type Location,
+  type Scraper,
+  type ScraperInput,
+  Site,
 } from '../model';
 import {
-    createLogger,
-    createSession,
-    extractEmailsFromText,
-    markdownConverter,
-    randomDelay,
+  createLogger,
+  createSession,
+  extractEmailsFromText,
+  markdownConverter,
+  randomDelay,
 } from '../util';
 import { HEADERS } from './constant';
 import { isJobRemote, parseCompanyIndustry, parseJobType } from './util';
@@ -198,16 +198,10 @@ export class Naukri implements Scraper {
     return { jobs: jobList.slice(0, resultsWanted) };
   }
 
-  private processJob(
-    job: NaukriJobData,
-    jobId: string,
-    fullDescr: boolean
-  ): JobPost | null {
+  private processJob(job: NaukriJobData, jobId: string, fullDescr: boolean): JobPost | null {
     const title = job.title ?? 'N/A';
     const company = job.companyName ?? 'N/A';
-    const companyUrl = job.staticUrl
-      ? `https://www.naukri.com/${job.staticUrl}`
-      : null;
+    const companyUrl = job.staticUrl ? `https://www.naukri.com/${job.staticUrl}` : null;
 
     const location = this.getLocation(job.placeholders);
     const compensation = this.getCompensation(job.placeholders);
@@ -220,10 +214,7 @@ export class Naukri implements Scraper {
     const companyIndustry = parseCompanyIndustry(rawDescription ?? null);
 
     let description = rawDescription;
-    if (
-      description &&
-      this.scraperInput?.descriptionFormat === DescriptionFormat.MARKDOWN
-    ) {
+    if (description && this.scraperInput?.descriptionFormat === DescriptionFormat.MARKDOWN) {
       description = markdownConverter(description) ?? description;
     }
 
@@ -231,9 +222,7 @@ export class Naukri implements Scraper {
     const companyLogo = job.logoPathV3 ?? job.logoPath ?? null;
 
     // Naukri-specific fields
-    const skills = job.tagsAndSkills
-      ? job.tagsAndSkills.split(',').map((s) => s.trim())
-      : null;
+    const skills = job.tagsAndSkills ? job.tagsAndSkills.split(',').map((s) => s.trim()) : null;
     const experienceRange = job.experienceText ?? null;
     const ambitionBox = job.ambitionBoxData ?? {};
     const companyRating = ambitionBox.AggregateRating
@@ -241,11 +230,7 @@ export class Naukri implements Scraper {
       : null;
     const companyReviewsCount = ambitionBox.ReviewsCount ?? null;
     const vacancyCount = job.vacancy ?? null;
-    const workFromHomeType = this.inferWorkFromHomeType(
-      job.placeholders,
-      title,
-      description ?? ''
-    );
+    const workFromHomeType = this.inferWorkFromHomeType(job.placeholders, title, description ?? '');
 
     return {
       id: `nk-${jobId}`,
@@ -281,9 +266,7 @@ export class Naukri implements Scraper {
         const city = parts[0] ?? undefined;
         const state = parts[1] ?? undefined;
         location = { city, state, country: Country.INDIA };
-        log.debug(
-          `Parsed location: ${[city, state].filter(Boolean).join(', ')}`
-        );
+        log.debug(`Parsed location: ${[city, state].filter(Boolean).join(', ')}`);
         break;
       }
     }
@@ -337,10 +320,7 @@ export class Naukri implements Scraper {
     return null;
   }
 
-  private parseDate(
-    label: string | undefined,
-    createdDate: number | undefined
-  ): Date | null {
+  private parseDate(label: string | undefined, createdDate: number | undefined): Date | null {
     const today = new Date();
 
     if (!label) {
@@ -387,9 +367,7 @@ export class Naukri implements Scraper {
     title: string,
     description: string
   ): string | null {
-    const locationStr = placeholders
-      .find((p) => p.type === 'location')
-      ?.label.toLowerCase() ?? '';
+    const locationStr = placeholders.find((p) => p.type === 'location')?.label.toLowerCase() ?? '';
 
     if (
       locationStr.includes('hybrid') ||

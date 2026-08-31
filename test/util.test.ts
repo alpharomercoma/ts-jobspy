@@ -189,9 +189,7 @@ describe('Utility Tests', () => {
     });
 
     it('should detect remote in description', () => {
-      expect(
-        isJobRemote('Software Engineer', 'This is a remote position', null)
-      ).toBe(true);
+      expect(isJobRemote('Software Engineer', 'This is a remote position', null)).toBe(true);
     });
 
     it('should detect wfh', () => {
@@ -199,9 +197,7 @@ describe('Utility Tests', () => {
     });
 
     it('should return false for non-remote jobs', () => {
-      expect(isJobRemote('On-site Developer', 'Office based', null)).toBe(
-        false
-      );
+      expect(isJobRemote('On-site Developer', 'Office based', null)).toBe(false);
     });
   });
 });

@@ -14,23 +14,23 @@
  */
 
 import {
-  Compensation,
+  type Compensation,
   CompensationInterval,
   Country,
   DescriptionFormat,
   DESIRED_ORDER,
   displayLocation,
   getCountryFromString,
-  JobPost,
-  JobResponse,
+  type JobPost,
+  type JobResponse,
   JobType,
-  Location,
+  type Location,
   SalarySource,
-  ScrapeJobsOptions,
-  Scraper,
-  ScraperInput,
+  type ScrapeJobsOptions,
+  type Scraper,
+  type ScraperInput,
   Site,
-  SupportedSiteName,
+  type SupportedSiteName,
 } from './model';
 
 import {
@@ -54,20 +54,37 @@ import { ZipRecruiter } from './ziprecruiter';
 
 // Export all types and classes
 export {
-  BaytScraper, BDJobs, CompensationInterval, Country, DescriptionFormat, DESIRED_ORDER, displayLocation,
-  getCountryFromString, Glassdoor,
-  Google, Indeed, JobType,
+  BaytScraper,
+  BDJobs,
+  CompensationInterval,
+  Country,
+  DescriptionFormat,
+  DESIRED_ORDER,
+  displayLocation,
+  getCountryFromString,
+  Glassdoor,
+  Google,
+  Indeed,
+  JobType,
   // Currently working scrapers
-  LinkedIn, Naukri, SalarySource, Site,
+  LinkedIn,
+  Naukri,
+  SalarySource,
+  Site,
   // Under maintenance - still exported for future use
-  ZipRecruiter
+  ZipRecruiter,
 };
 
 // Export types separately
 export type {
-  Compensation, JobPost,
-  JobResponse, Location, ScrapeJobsOptions,
-  Scraper, ScraperInput, SupportedSiteName
+  Compensation,
+  JobPost,
+  JobResponse,
+  Location,
+  ScrapeJobsOptions,
+  Scraper,
+  ScraperInput,
+  SupportedSiteName,
 };
 
 // Export exceptions
@@ -75,8 +92,12 @@ export * from './exception';
 
 // Export utilities
 export {
-  convertToAnnual, createLogger, extractSalary, getEnumFromValue,
-  mapStrToSite, setLoggerLevel
+  convertToAnnual,
+  createLogger,
+  extractSalary,
+  getEnumFromValue,
+  mapStrToSite,
+  setLoggerLevel,
 } from './util';
 
 const log = createLogger('Main');
@@ -89,7 +110,14 @@ const log = createLogger('Main');
  * Note: Only LinkedIn and Indeed are currently working.
  * Other scrapers are under maintenance and may not function properly.
  */
-const SCRAPER_MAPPING: Record<Site, new (options: { proxies?: string[]; caCert?: string; userAgent?: string }) => Scraper> = {
+const SCRAPER_MAPPING: Record<
+  Site,
+  new (options: {
+    proxies?: string[];
+    caCert?: string;
+    userAgent?: string;
+  }) => Scraper
+> = {
   [Site.LINKEDIN]: LinkedIn,
   [Site.INDEED]: Indeed,
   // Under maintenance
@@ -192,9 +220,7 @@ export async function scrapeJobs(options: ScrapeJobsOptions = {}): Promise<JobDa
     }
 
     if (Array.isArray(siteName)) {
-      return siteName.map((s) =>
-        typeof s === 'string' ? mapStrToSite(s) : s
-      );
+      return siteName.map((s) => (typeof s === 'string' ? mapStrToSite(s) : s));
     }
 
     return [siteName];
@@ -249,9 +275,7 @@ export async function scrapeJobs(options: ScrapeJobsOptions = {}): Promise<JobDa
   }
 
   // Scrape function for a single site
-  const scrapeSite = async (
-    site: Site
-  ): Promise<{ site: string; response: JobResponse }> => {
+  const scrapeSite = async (site: Site): Promise<{ site: string; response: JobResponse }> => {
     const ScraperClass = SCRAPER_MAPPING[site];
     const scraper = new ScraperClass({
       proxies: proxyList,
@@ -279,12 +303,7 @@ export async function scrapeJobs(options: ScrapeJobsOptions = {}): Promise<JobDa
 
   for (const { site, response } of results) {
     for (const job of response.jobs) {
-      const jobData = processJobToData(
-        job,
-        site,
-        countryEnum,
-        enforceAnnualSalary
-      );
+      const jobData = processJobToData(job, site, countryEnum, enforceAnnualSalary);
       jobsData.push(jobData);
     }
   }
@@ -345,13 +364,7 @@ function processJobToData(
     salarySource = SalarySource.DIRECT_DATA;
 
     // Enforce annual salary if requested
-    if (
-      enforceAnnualSalary &&
-      interval &&
-      interval !== 'yearly' &&
-      minAmount &&
-      maxAmount
-    ) {
+    if (enforceAnnualSalary && interval && interval !== 'yearly' && minAmount && maxAmount) {
       const data = { interval, minAmount, maxAmount };
       convertToAnnual(data);
       interval = data.interval;

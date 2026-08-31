@@ -37,8 +37,7 @@ export function findJobInfoInitialPage(htmlText: string): unknown[][] {
   const pattern = /520084652":(\[.*?\]\s*])\s*}\s*]\s*]\s*]\s*]\s*]/g;
   const results: unknown[][] = [];
 
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(htmlText)) !== null) {
+  for (const match of htmlText.matchAll(pattern)) {
     try {
       const parsed = JSON.parse(match[1]) as unknown[];
       results.push(parsed);

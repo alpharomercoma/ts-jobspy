@@ -9,8 +9,7 @@ export const HEADERS_INITIAL: Record<string, string> = {
   priority: 'u=0, i',
   referer: 'https://www.google.com/',
   'sec-ch-prefers-color-scheme': 'dark',
-  'sec-ch-ua':
-    '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+  'sec-ch-ua': '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
   'sec-ch-ua-arch': '"arm"',
   'sec-ch-ua-bitness': '"64"',
   'sec-ch-ua-form-factors': '"Desktop"',
@@ -40,8 +39,7 @@ export const HEADERS_JOBS: Record<string, string> = {
   priority: 'u=1, i',
   referer: 'https://www.google.com/',
   'sec-ch-prefers-color-scheme': 'dark',
-  'sec-ch-ua':
-    '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+  'sec-ch-ua': '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
   'sec-ch-ua-arch': '"arm"',
   'sec-ch-ua-bitness': '"64"',
   'sec-ch-ua-form-factors': '"Desktop"',

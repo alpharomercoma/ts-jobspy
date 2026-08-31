@@ -5,22 +5,17 @@
  * Original: https://github.com/speedyapply/JobSpy
  */
 
-import { AxiosInstance } from 'axios';
+import type { AxiosInstance } from 'axios';
 import {
-  JobPost,
-  JobResponse,
-  Location,
-  ScraperInput,
+  type JobPost,
+  type JobResponse,
+  type Location,
+  type ScraperInput,
   Site,
   JobType,
-  Scraper,
+  type Scraper,
 } from '../model';
-import {
-  createSession,
-  extractEmailsFromText,
-  extractJobType,
-  createLogger,
-} from '../util';
+import { createSession, extractEmailsFromText, extractJobType, createLogger } from '../util';
 import { HEADERS_INITIAL, HEADERS_JOBS, ASYNC_PARAM } from './constant';
 import { findJobInfo, findJobInfoInitialPage } from './util';
 
@@ -74,9 +69,7 @@ export class Google implements Scraper {
     const offset = this.scraperInput.offset ?? 0;
 
     while (this.seenUrls.size < resultsWanted + offset && cursor) {
-      log.info(
-        `search page: ${page} / ${Math.ceil(resultsWanted / this.jobsPerPage)}`
-      );
+      log.info(`search page: ${page} / ${Math.ceil(resultsWanted / this.jobsPerPage)}`);
 
       try {
         const { jobs, nextCursor } = await this.getJobsNextPage(cursor);
@@ -190,9 +183,7 @@ export class Google implements Scraper {
     return this.parseJobs(response.data as string);
   }
 
-  private parseJobs(
-    jobData: string
-  ): { jobs: JobPost[]; nextCursor: string | null } {
+  private parseJobs(jobData: string): { jobs: JobPost[]; nextCursor: string | null } {
     const startIdx = jobData.indexOf('[[[');
     const endIdx = jobData.lastIndexOf(']]]') + 3;
 
@@ -236,9 +227,7 @@ export class Google implements Scraper {
             jobsOnPage.push(jobPost);
           }
         }
-      } catch {
-        continue;
-      }
+      } catch {}
     }
 
     return { jobs: jobsOnPage, nextCursor: dataAsyncFc };

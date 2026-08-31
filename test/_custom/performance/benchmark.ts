@@ -111,4 +111,4 @@ if (require.main === module) {
   runBenchmarks().catch(console.error);
 }
 
-export { benchmarkSite, runBenchmarks, BenchmarkResult };
+export { benchmarkSite, runBenchmarks, type BenchmarkResult };
