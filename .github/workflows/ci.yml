@@ -57,6 +57,9 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Upgrade npm for trusted publishing (OIDC)
+        run: npm install -g npm@latest
+
       - name: Check whether this version is already published
         id: version
         run: |
@@ -78,8 +81,6 @@ jobs:
         if: steps.version.outputs.publish == 'true'
         run: npm run build
 
-      - name: Publish to npm
+      - name: Publish to npm (trusted publishing via OIDC)
         if: steps.version.outputs.publish == 'true'
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
