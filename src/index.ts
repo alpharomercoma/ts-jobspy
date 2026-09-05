@@ -8,16 +8,10 @@
  */
 
 import {
-  type Compensation,
-  CompensationInterval,
   Country,
-  DescriptionFormat,
   displayLocation,
-  getCountryFromString,
   type JobPost,
   type JobResponse,
-  JobType,
-  type Location,
   SalarySource,
   type Scraper,
   type ScraperInput,
@@ -27,7 +21,15 @@ import {
 import { convertToAnnual, createLogger, extractSalary, setLoggerLevel } from './util';
 
 import { dedupeJobs } from './dedupe';
-import { type ResolvedOptions, resolveOptions, type ScrapeOptions } from './options';
+import {
+  type CompensationIntervalName,
+  type JobTypeName,
+  type ResolvedOptions,
+  resolveOptions,
+  type SalarySourceName,
+  type ScrapeOptions,
+  type SiteName,
+} from './options';
 import type { Job, ScrapeResult, SiteMeta, SiteOutcome } from './result';
 
 // Scrapers
@@ -40,45 +42,28 @@ import { LinkedIn } from './linkedin';
 import { Naukri } from './naukri';
 import { ZipRecruiter } from './ziprecruiter';
 
-// Public API surface
-export {
-  BaytScraper,
-  BDJobs,
-  CompensationInterval,
-  Country,
-  DescriptionFormat,
-  displayLocation,
-  getCountryFromString,
-  Glassdoor,
-  Google,
-  Indeed,
-  JobType,
-  LinkedIn,
-  Naukri,
-  SalarySource,
-  Site,
-  ZipRecruiter,
-};
-export type { Compensation, JobPost, JobResponse, Location, Scraper, ScraperInput };
+// Public API surface.
+//
+// scrapeJobs (declared below) is the entry point. The public surface is
+// deliberately narrow: option and result types, the site name lists, and the
+// error classes. Internal scraper classes and the low-level Scraper /
+// ScraperInput / JobPost contract are NOT exported; they are an implementation
+// detail that can change without a breaking release.
 export * from './exception';
 export {
+  type CompensationIntervalName,
+  type CountryName,
   type DedupeMode,
   type GoogleOptions,
+  type JobTypeName,
   type LinkedInOptions,
+  type SalarySourceName,
   type ScrapeOptions,
   type SiteName,
   UNDER_MAINTENANCE_SITES,
   WORKING_SITES,
 } from './options';
 export type { Job, ScrapeMeta, ScrapeResult, SiteError, SiteMeta, SiteStatus } from './result';
-export {
-  convertToAnnual,
-  createLogger,
-  extractSalary,
-  getEnumFromValue,
-  mapStrToSite,
-  setLoggerLevel,
-} from './util';
 
 const log = createLogger('Main');
 
@@ -163,10 +148,13 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
   const siteMetas: SiteMeta[] = [];
 
   for (const outcome of outcomes) {
+    // Safety net: never emit more than resultsWanted per site, even if a scraper
+    // over-returns (e.g. a board that ignores the cap on the last page).
+    const cappedPosts = outcome.posts.slice(0, outcome.requested);
     // Conversion failures stay isolated to their site: the bad posting is
     // skipped and recorded, never discarding other sites' results.
     let converted = 0;
-    for (const post of outcome.posts) {
+    for (const post of cappedPosts) {
       try {
         jobs.push(toJob(post, outcome.site, resolved));
         converted += 1;
@@ -176,7 +164,7 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
         );
       }
     }
-    siteMetas.push(toSiteMeta({ ...outcome, posts: outcome.posts.slice(0, converted) }));
+    siteMetas.push(toSiteMeta({ ...outcome, posts: cappedPosts.slice(0, converted) }));
   }
 
   // Strict mode rejects on any failure or interruption, including conversion
@@ -267,6 +255,9 @@ function toSiteMeta(outcome: SiteOutcome): SiteMeta {
     requested: outcome.requested,
     durationMs: outcome.durationMs,
     jobsPerSecond: rate(outcome.posts.length, outcome.durationMs),
+    ...(outcome.unsupportedOptions && outcome.unsupportedOptions.length > 0
+      ? { unsupportedOptions: outcome.unsupportedOptions }
+      : {}),
   };
   if (outcome.failed) {
     return {
@@ -299,6 +290,14 @@ class SiteTimeoutError extends Error {
   }
 }
 
+/**
+ * How long, after a timeout fires and the controller is aborted, we wait for a
+ * cooperative scraper to unwind and hand back the jobs it already collected.
+ * Aborted requests reject almost immediately; a scraper that ignores the signal
+ * hits this window and is reported as a timeout error rather than hanging.
+ */
+const ABORT_GRACE_MS = 300;
+
 async function scrapeSite(
   site: Site,
   scraperInput: ScraperInput,
@@ -307,6 +306,16 @@ async function scrapeSite(
   const start = Date.now();
   const requested = resolved.resultsWanted;
   const name = publicSiteName(site);
+  const outcome = (over: Partial<SiteOutcome>): SiteOutcome => ({
+    site: name,
+    posts: [],
+    requested,
+    durationMs: Date.now() - start,
+    failed: false,
+    errors: [],
+    ...over,
+  });
+
   // A per-site AbortController so a timeout actually cancels in-flight requests
   // rather than leaving the scraper running in the background.
   const controller = new AbortController();
@@ -319,56 +328,68 @@ async function scrapeSite(
     });
 
     const scrapePromise = scraper.scrape({ ...scraperInput, signal: controller.signal });
-    let raced: Promise<JobResponse> = scrapePromise;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    if (resolved.timeoutMs !== undefined) {
-      const timeoutMs = resolved.timeoutMs;
-      raced = Promise.race([
-        scrapePromise,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            // Reject the race first so the timeout deterministically wins even
-            // if aborting settles the scraper synchronously, then abort to stop
-            // in-flight requests.
-            reject(new SiteTimeoutError(name, timeoutMs));
-            controller.abort();
-          }, timeoutMs);
-        }),
-      ]);
-    }
+    const settle = (p: Promise<JobResponse>) =>
+      p.then(
+        (r) => ({ kind: 'done' as const, r }),
+        (e) => ({ kind: 'error' as const, e })
+      );
+
     let response: JobResponse;
-    try {
-      response = await raced;
-    } finally {
+    if (resolved.timeoutMs === undefined) {
+      response = await scrapePromise;
+    } else {
+      const timeoutMs = resolved.timeoutMs;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeoutMarker = new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => {
+          // Abort in-flight requests, then let the scraper unwind (below).
+          controller.abort();
+          resolve('timeout');
+        }, timeoutMs);
+      });
+      const first = await Promise.race([settle(scrapePromise), timeoutMarker]);
       if (timer !== undefined) clearTimeout(timer);
-      // If the timeout won the race, the scraper promise is still pending;
-      // swallow its eventual (abort) rejection so it can't surface as an
-      // unhandled rejection.
-      scrapePromise.catch(() => undefined);
+
+      if (first === 'timeout') {
+        // The timeout won. Give the aborted scraper a brief grace window to
+        // return whatever it already collected, so a partial scrape is reported
+        // as 'partial' with its jobs, not discarded.
+        const salvaged = await Promise.race([
+          settle(scrapePromise),
+          new Promise<'grace'>((resolve) => setTimeout(() => resolve('grace'), ABORT_GRACE_MS)),
+        ]);
+        if (salvaged !== 'grace' && salvaged.kind === 'done' && salvaged.r.jobs.length > 0) {
+          log.info(`${displaySite(site)}: timed out with ${salvaged.r.jobs.length} partial jobs`);
+          return outcome({
+            posts: salvaged.r.jobs,
+            errors: [
+              ...(salvaged.r.errors ?? []),
+              `timed out after ${timeoutMs}ms (returned partial results)`,
+            ],
+            unsupportedOptions: salvaged.r.unsupportedOptions,
+          });
+        }
+        // Nothing salvageable: the scraper returned empty, rejected, or ignored
+        // the abort. Swallow any later rejection and report a timeout error.
+        scrapePromise.catch(() => undefined);
+        throw new SiteTimeoutError(name, timeoutMs);
+      }
+
+      if (first.kind === 'error') throw first.e;
+      response = first.r;
     }
 
     log.info(`${displaySite(site)}: finished scraping (${response.jobs.length} jobs)`);
-    return {
-      site: name,
+    return outcome({
       posts: response.jobs,
-      requested,
-      durationMs: Date.now() - start,
-      failed: false,
       errors: response.errors ?? [],
-    };
+      unsupportedOptions: response.unsupportedOptions,
+    });
   } catch (thrown) {
     log.error(
-      `${displaySite(site)}: scraping failed — ${thrown instanceof Error ? thrown.message : String(thrown)}`
+      `${displaySite(site)}: scraping failed - ${thrown instanceof Error ? thrown.message : String(thrown)}`
     );
-    return {
-      site: name,
-      posts: [],
-      requested,
-      durationMs: Date.now() - start,
-      failed: true,
-      thrown,
-      errors: [],
-    };
+    return outcome({ failed: true, thrown });
   }
 }
 
@@ -393,14 +414,17 @@ function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
       resolved.enforceAnnualSalary &&
       interval &&
       interval !== 'yearly' &&
-      minAmount &&
-      maxAmount
+      (minAmount || maxAmount)
     ) {
-      const data = { interval, minAmount, maxAmount };
+      // Convert whichever bounds are present: a one-sided range is still valid,
+      // and after conversion the interval is reported as yearly.
+      const data: { interval: string; minAmount?: number; maxAmount?: number } = { interval };
+      if (minAmount !== null) data.minAmount = minAmount;
+      if (maxAmount !== null) data.maxAmount = maxAmount;
       convertToAnnual(data);
       interval = data.interval;
-      minAmount = data.minAmount;
-      maxAmount = data.maxAmount;
+      minAmount = data.minAmount ?? null;
+      maxAmount = data.maxAmount ?? null;
     }
   } else if (resolved.country === Country.USA && post.description) {
     const extracted = extractSalary(post.description, {
@@ -421,7 +445,7 @@ function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
 
   return {
     id: post.id,
-    site,
+    site: site as SiteName,
     jobUrl: post.jobUrl,
     jobUrlDirect: post.jobUrlDirect ?? null,
     title: post.title,
@@ -431,9 +455,9 @@ function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
       post.datePosted && !Number.isNaN(post.datePosted.getTime())
         ? post.datePosted.toISOString().split('T')[0]
         : null,
-    jobTypes: post.jobType ?? [],
-    salarySource,
-    interval,
+    jobTypes: (post.jobType ?? []) as JobTypeName[],
+    salarySource: salarySource as SalarySourceName | null,
+    interval: interval as CompensationIntervalName | null,
     minAmount,
     maxAmount,
     currency,

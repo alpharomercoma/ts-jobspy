@@ -45,6 +45,104 @@ export const UNDER_MAINTENANCE_SITES: readonly SiteName[] = [
 
 export type DedupeMode = 'none' | 'url' | 'content';
 
+/** Canonical job-type values accepted by `jobType` and reported in Job.jobTypes. */
+export type JobTypeName =
+  | 'fulltime'
+  | 'parttime'
+  | 'contract'
+  | 'temporary'
+  | 'internship'
+  | 'perdiem'
+  | 'nights'
+  | 'other'
+  | 'summer'
+  | 'volunteer';
+
+/**
+ * Country names accepted by the `country` option (for Indeed/Glassdoor domain
+ * selection). Common aliases ('uk', 'usa', 'uae', 'czechia', ...) are also
+ * accepted at runtime; this union lists the canonical forms for autocomplete.
+ */
+export type CountryName =
+  | 'argentina'
+  | 'australia'
+  | 'austria'
+  | 'bahrain'
+  | 'bangladesh'
+  | 'belgium'
+  | 'brazil'
+  | 'bulgaria'
+  | 'canada'
+  | 'chile'
+  | 'china'
+  | 'colombia'
+  | 'costa rica'
+  | 'croatia'
+  | 'cyprus'
+  | 'czech republic'
+  | 'denmark'
+  | 'ecuador'
+  | 'egypt'
+  | 'estonia'
+  | 'finland'
+  | 'france'
+  | 'germany'
+  | 'greece'
+  | 'hong kong'
+  | 'hungary'
+  | 'india'
+  | 'indonesia'
+  | 'ireland'
+  | 'israel'
+  | 'italy'
+  | 'japan'
+  | 'kuwait'
+  | 'latvia'
+  | 'lithuania'
+  | 'luxembourg'
+  | 'malaysia'
+  | 'malta'
+  | 'mexico'
+  | 'morocco'
+  | 'netherlands'
+  | 'new zealand'
+  | 'nigeria'
+  | 'norway'
+  | 'oman'
+  | 'pakistan'
+  | 'panama'
+  | 'peru'
+  | 'philippines'
+  | 'poland'
+  | 'portugal'
+  | 'qatar'
+  | 'romania'
+  | 'saudi arabia'
+  | 'singapore'
+  | 'slovakia'
+  | 'slovenia'
+  | 'south africa'
+  | 'south korea'
+  | 'spain'
+  | 'sweden'
+  | 'switzerland'
+  | 'taiwan'
+  | 'thailand'
+  | 'turkey'
+  | 'ukraine'
+  | 'united arab emirates'
+  | 'united kingdom'
+  | 'united states'
+  | 'uruguay'
+  | 'venezuela'
+  | 'vietnam';
+
+/** Pay interval reported in Job.interval. */
+export type CompensationIntervalName = 'yearly' | 'monthly' | 'weekly' | 'daily' | 'hourly';
+
+/** Where a job's salary came from, reported in Job.salarySource. */
+export type SalarySourceName = 'direct_data' | 'description';
+
 export interface LinkedInOptions {
   /** Fetch the full description (and richer fields) with one extra request per job. */
   fetchDescription?: boolean;
@@ -65,8 +163,12 @@ export interface ScrapeOptions {
   /** Search radius in miles (site permitting). Default 50. */
   distance?: number;
   isRemote?: boolean;
-  /** e.g. 'fulltime', 'parttime', 'internship', 'contract'. */
-  jobType?: string;
+  /**
+   * Job type filter. Common values: 'fulltime', 'parttime', 'internship',
+   * 'contract', 'temporary'. Hyphenated/spaced forms (e.g. 'full-time') are
+   * also accepted and normalized.
+   */
+  jobType?: JobTypeName | (string & {});
   easyApply?: boolean;
   /** Jobs to return per site. Default 15. */
   resultsWanted?: number;
@@ -75,7 +177,7 @@ export interface ScrapeOptions {
   /** Only jobs posted within the last N hours. */
   hoursOld?: number;
   /** Country for Indeed/Glassdoor domain selection, e.g. 'usa', 'uk'. Default 'usa'. */
-  country?: string;
+  country?: CountryName | (string & {});
   /** 'markdown' | 'html' | 'plain'. Default 'markdown'. */
   descriptionFormat?: 'markdown' | 'html' | 'plain';
   /** Convert hourly/monthly salaries to annual. Default false. */
@@ -171,7 +273,79 @@ function optional<T>(
   return value === undefined ? undefined : check(value, name);
 }
 
+function isPlainObject(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Every top-level key resolveOptions understands. Anything else is rejected. */
+const KNOWN_OPTION_KEYS: ReadonlySet<string> = new Set<keyof ScrapeOptions>([
+  'sites',
+  'searchTerm',
+  'location',
+  'distance',
+  'isRemote',
+  'jobType',
+  'easyApply',
+  'resultsWanted',
+  'offset',
+  'hoursOld',
+  'country',
+  'descriptionFormat',
+  'enforceAnnualSalary',
+  'dedupe',
+  'strict',
+  'timeoutMs',
+  'siteConcurrency',
+  'proxies',
+  'caCert',
+  'userAgent',
+  'verbose',
+  'linkedin',
+  'google',
+]);
+
+const KNOWN_LINKEDIN_KEYS: ReadonlySet<string> = new Set<keyof LinkedInOptions>([
+  'fetchDescription',
+  'companyIds',
+]);
+const KNOWN_GOOGLE_KEYS: ReadonlySet<string> = new Set<keyof GoogleOptions>(['searchTerm']);
+
+function rejectUnknownKeys(
+  obj: Record<string, unknown>,
+  known: ReadonlySet<string>,
+  where: string
+) {
+  for (const key of Object.keys(obj)) {
+    if (!known.has(key)) {
+      throw new InvalidInputError(
+        `Unknown option '${where}${key}'; valid keys: ${[...known].join(', ')}`
+      );
+    }
+  }
+}
+
 export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
+  if (!isPlainObject(options)) {
+    throw new InvalidInputError(`options must be a plain object, got: ${String(options)}`);
+  }
+  rejectUnknownKeys(options as Record<string, unknown>, KNOWN_OPTION_KEYS, '');
+  if (options.linkedin !== undefined) {
+    if (!isPlainObject(options.linkedin)) {
+      throw new InvalidInputError('linkedin must be a plain object');
+    }
+    rejectUnknownKeys(
+      options.linkedin as Record<string, unknown>,
+      KNOWN_LINKEDIN_KEYS,
+      'linkedin.'
+    );
+  }
+  if (options.google !== undefined) {
+    if (!isPlainObject(options.google)) {
+      throw new InvalidInputError('google must be a plain object');
+    }
+    rejectUnknownKeys(options.google as Record<string, unknown>, KNOWN_GOOGLE_KEYS, 'google.');
+  }
+
   const raw = options.sites ?? [...WORKING_SITES];
   const siteNames = Array.isArray(raw) ? raw : [raw];
   if (siteNames.length === 0) {

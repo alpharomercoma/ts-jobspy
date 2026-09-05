@@ -329,6 +329,49 @@ export function currencyParser(currencyStr: string): number {
 }
 
 /**
+ * Map a leading currency symbol to an ISO 4217 code so the public `currency`
+ * field is always an ISO code (matching Indeed's output), never a raw symbol.
+ *
+ * A bare '$' is inherently ambiguous (USD, CAD, AUD, SGD, ...); we default it
+ * to USD as a best effort since it is by far the most common on the boards we
+ * scrape, but genuinely ambiguous or unknown symbols return null rather than
+ * inventing a wrong ISO code. Callers should treat null as "unknown currency".
+ */
+export function currencyFromSymbol(text: string): string | null {
+  const trimmed = text.trim();
+  // Multi-character prefixes must be checked before the single leading char,
+  // so "CA$" is CAD (not C...) and "A$" is AUD (not A...).
+  const prefixToIso: Array<[string, string]> = [
+    ['CA$', 'CAD'],
+    ['C$', 'CAD'],
+    ['A$', 'AUD'],
+    ['AU$', 'AUD'],
+    ['NZ$', 'NZD'],
+    ['HK$', 'HKD'],
+    ['S$', 'SGD'],
+    ['US$', 'USD'],
+    ['R$', 'BRL'],
+    ['CHF', 'CHF'],
+    ['MX$', 'MXN'],
+  ];
+  for (const [prefix, iso] of prefixToIso) {
+    if (trimmed.startsWith(prefix)) return iso;
+  }
+  const symbolToIso: Record<string, string> = {
+    $: 'USD',
+    '£': 'GBP',
+    '€': 'EUR',
+    '₹': 'INR',
+    '₩': 'KRW',
+    '₺': 'TRY',
+    '₪': 'ILS',
+    '₽': 'RUB',
+    R: 'ZAR',
+  };
+  return symbolToIso[trimmed[0]] ?? null;
+}
+
+/**
  * Remove all attributes from HTML element (for clean output)
  */
 export function removeAttributes(html: string): string {
@@ -374,8 +417,40 @@ export function extractJobType(description: string | null): JobType[] | null {
   return types.length > 0 ? types : null;
 }
 
+/** Factor that turns one interval's amount into a yearly amount. */
+const ANNUAL_FACTOR: Record<CompensationInterval, number> = {
+  [CompensationInterval.YEARLY]: 1,
+  [CompensationInterval.MONTHLY]: 12,
+  [CompensationInterval.WEEKLY]: 52,
+  [CompensationInterval.DAILY]: 260,
+  [CompensationInterval.HOURLY]: 2080,
+};
+
 /**
- * Extract salary from description text
+ * Detect the pay interval from an explicit unit in the text (e.g. "per hour",
+ * "/yr", "a week", "P.A."). Returns null when the text states no unit, so the
+ * caller can fall back to a magnitude heuristic rather than guessing wrongly.
+ */
+export function intervalFromText(text: string): CompensationInterval | null {
+  const t = text.toLowerCase();
+  if (/(per\s*hour|\/\s*h(ou)?r|hourly|an?\s+hour)/.test(t)) return CompensationInterval.HOURLY;
+  if (/(per\s*day|\/\s*day|daily|an?\s+day)/.test(t)) return CompensationInterval.DAILY;
+  if (/(per\s*week|\/\s*w(ee)?k|weekly|an?\s+week)/.test(t)) return CompensationInterval.WEEKLY;
+  if (/(per\s*month|\/\s*mo(nth)?|monthly|an?\s+month)/.test(t))
+    return CompensationInterval.MONTHLY;
+  if (/(per\s*(year|annum)|\/\s*y(ea)?r|p\.?\s*a\.?|yearly|annual|an?\s+year)/.test(t))
+    return CompensationInterval.YEARLY;
+  return null;
+}
+
+/**
+ * Extract a salary range from free text.
+ *
+ * The interval comes from an explicit unit in the text when present ("per week",
+ * "/yr", "P.A."); only when the text states none do we fall back to a magnitude
+ * heuristic. Amounts are parsed with parseFloat so cents are preserved. With
+ * enforceAnnualSalary the amounts are annualized and the interval is reported as
+ * 'yearly' (never the pre-conversion unit).
  */
 export function extractSalary(
   salaryStr: string | null,
@@ -405,18 +480,16 @@ export function extractSalary(
   if (!salaryStr) return nullResult;
 
   const minMaxPattern =
-    /\$(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)\s*[-—–]\s*(?:\$)?(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)/;
+    /\$(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)\s*[-–—]\s*(?:\$)?(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)/;
 
-  const toInt = (s: string): number => parseInt(s.replace(/,/g, ''), 10);
-  const convertHourlyToAnnual = (hourly: number): number => hourly * 2080;
-  const convertMonthlyToAnnual = (monthly: number): number => monthly * 12;
+  const toNum = (s: string): number => parseFloat(s.replace(/,/g, ''));
 
   const match = salaryStr.match(minMaxPattern);
 
   if (!match) return nullResult;
 
-  let minSalary = toInt(match[1]);
-  let maxSalary = toInt(match[3]);
+  let minSalary = toNum(match[1]);
+  let maxSalary = toNum(match[3]);
 
   // Handle 'k' suffix
   if (match[2].toLowerCase() === 'k' || match[4].toLowerCase() === 'k') {
@@ -424,31 +497,20 @@ export function extractSalary(
     maxSalary *= 1000;
   }
 
-  let interval: CompensationInterval;
-  let annualMinSalary: number;
-  let annualMaxSalary: number | null = null;
-
-  if (minSalary < hourlyThreshold) {
-    interval = CompensationInterval.HOURLY;
-    annualMinSalary = convertHourlyToAnnual(minSalary);
-    if (maxSalary < hourlyThreshold) {
-      annualMaxSalary = convertHourlyToAnnual(maxSalary);
-    }
-  } else if (minSalary < monthlyThreshold) {
-    interval = CompensationInterval.MONTHLY;
-    annualMinSalary = convertMonthlyToAnnual(minSalary);
-    if (maxSalary < monthlyThreshold) {
-      annualMaxSalary = convertMonthlyToAnnual(maxSalary);
-    }
-  } else {
-    interval = CompensationInterval.YEARLY;
-    annualMinSalary = minSalary;
-    annualMaxSalary = maxSalary;
+  // Prefer an explicit unit stated in the text; fall back to magnitude only when
+  // the text gives no unit at all.
+  let interval = intervalFromText(salaryStr);
+  if (interval === null) {
+    if (minSalary < hourlyThreshold) interval = CompensationInterval.HOURLY;
+    else if (minSalary < monthlyThreshold) interval = CompensationInterval.MONTHLY;
+    else interval = CompensationInterval.YEARLY;
   }
 
-  if (!annualMaxSalary) return nullResult;
+  const factor = ANNUAL_FACTOR[interval];
+  const annualMinSalary = minSalary * factor;
+  const annualMaxSalary = maxSalary * factor;
 
-  // Validate salary range
+  // Validate the annualized range so hourly/annual figures share one scale.
   if (
     annualMinSalary >= lowerLimit &&
     annualMinSalary <= upperLimit &&
@@ -458,7 +520,7 @@ export function extractSalary(
   ) {
     if (enforceAnnualSalary) {
       return {
-        interval,
+        interval: CompensationInterval.YEARLY,
         minAmount: annualMinSalary,
         maxAmount: annualMaxSalary,
         currency: 'USD',
@@ -483,42 +545,49 @@ export function convertToAnnual(jobData: {
   minAmount?: number;
   maxAmount?: number;
 }): void {
-  if (!jobData.interval || !jobData.minAmount || !jobData.maxAmount) return;
+  if (!jobData.interval || (!jobData.minAmount && !jobData.maxAmount)) return;
 
-  switch (jobData.interval) {
-    case 'hourly':
-      jobData.minAmount *= 2080;
-      jobData.maxAmount *= 2080;
-      break;
-    case 'monthly':
-      jobData.minAmount *= 12;
-      jobData.maxAmount *= 12;
-      break;
-    case 'weekly':
-      jobData.minAmount *= 52;
-      jobData.maxAmount *= 52;
-      break;
-    case 'daily':
-      jobData.minAmount *= 260;
-      jobData.maxAmount *= 260;
-      break;
+  const factor = ANNUAL_FACTOR[jobData.interval as CompensationInterval];
+  if (!factor || factor === 1) {
+    // Unknown or already-yearly interval: still label it yearly if convertible.
+    if (jobData.interval in ANNUAL_FACTOR) jobData.interval = 'yearly';
+    return;
   }
+  // Convert each bound that is actually present (a one-sided range is valid).
+  if (jobData.minAmount) jobData.minAmount *= factor;
+  if (jobData.maxAmount) jobData.maxAmount *= factor;
   jobData.interval = 'yearly';
 }
 
 /**
- * Sleep utility for delays
+ * Sleep utility for delays. When a signal is given, the sleep rejects with an
+ * AbortError the moment the signal aborts, so paced scrapers stop promptly on a
+ * timeout instead of finishing their delay first.
  */
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 /**
- * Random delay between min and max
+ * Random delay between min and max seconds. Abortable via the optional signal.
  */
-export function randomDelay(min: number, max: number): Promise<void> {
+export function randomDelay(min: number, max: number, signal?: AbortSignal): Promise<void> {
   const delay = Math.random() * (max - min) + min;
-  return sleep(delay * 1000);
+  return sleep(delay * 1000, signal);
 }
 
 /**

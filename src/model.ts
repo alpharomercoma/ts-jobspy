@@ -566,6 +566,13 @@ export interface JobResponse {
    * collecting anything must throw instead of reporting errors here.
    */
   errors?: string[];
+  /**
+   * Options the caller set that this site's API cannot express, so the scrape
+   * could not honor them (e.g. Bayt has no jobType filter). Only options that
+   * were actually set belong here; the orchestrator surfaces them in
+   * meta.sites[].unsupportedOptions so a dropped filter is never silent.
+   */
+  unsupportedOptions?: string[];
 }
 
 /**

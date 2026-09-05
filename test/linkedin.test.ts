@@ -3,7 +3,7 @@
  */
 
 import * as cheerio from 'cheerio';
-import { LinkedIn } from '../src';
+import { LinkedIn } from '../src/linkedin';
 import type { JobPost } from '../src/model';
 
 function jobCard(timeClass: string): string {

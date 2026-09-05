@@ -7,12 +7,13 @@
  */
 
 import type { JobPost } from './model';
+import type { CompensationIntervalName, JobTypeName, SalarySourceName, SiteName } from './options';
 
 /** One scraped job posting, flattened for easy filtering/export. */
 export interface Job {
   id: string | null;
-  /** Site the job came from ('indeed', 'linkedin', 'ziprecruiter', ...). */
-  site: string;
+  /** Site the job came from. */
+  site: SiteName;
   jobUrl: string;
   jobUrlDirect: string | null;
   title: string;
@@ -24,9 +25,9 @@ export interface Job {
    * posting made near midnight can differ by one day from the site-local date.
    */
   datePosted: string | null;
-  jobTypes: string[];
-  salarySource: string | null;
-  interval: string | null;
+  jobTypes: JobTypeName[];
+  salarySource: SalarySourceName | null;
+  interval: CompensationIntervalName | null;
   minAmount: number | null;
   maxAmount: number | null;
   currency: string | null;
@@ -77,6 +78,13 @@ interface SiteMetaBase {
   durationMs: number;
   /** Throughput for this site: jobs / durationMs, in jobs per second. */
   jobsPerSecond: number;
+  /**
+   * Options you set that this site cannot honor (e.g. Bayt ignores `jobType`).
+   * Present and non-empty only when a set option was dropped, so a silently
+   * unsupported filter never looks like it was applied. See the README's
+   * per-site option support matrix for the full picture.
+   */
+  unsupportedOptions?: string[];
 }
 
 /** Discriminated on `status`: `error` is present exactly when something went wrong. */
@@ -119,4 +127,6 @@ export interface SiteOutcome {
   thrown?: unknown;
   /** Interruptions the scraper reported alongside partial results. */
   errors: string[];
+  /** Options the caller set that this site cannot honor. */
+  unsupportedOptions?: string[];
 }

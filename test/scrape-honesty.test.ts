@@ -81,6 +81,29 @@ describe('honest per-site meta', () => {
     expect(result.jobs).toHaveLength(1);
   });
 
+  it('salvages partial results when a scraper unwinds after the timeout aborts it', async () => {
+    // Resolves with jobs shortly after the timeout fires (within the abort
+    // grace window): those jobs should be reported as 'partial', not discarded.
+    behavior.indeed = () =>
+      new Promise((resolve) => setTimeout(() => resolve({ jobs: [makePost()] }), 200));
+    behavior.linkedin = () => Promise.resolve({ jobs: [] });
+
+    const result = await scrapeJobs({ sites: 'indeed', timeoutMs: 100 });
+    const indeed = result.meta.sites[0];
+    expect(indeed.status).toBe('partial');
+    expect(indeed.error?.message).toContain('timed out');
+    expect(result.jobs).toHaveLength(1);
+  });
+
+  it('surfaces a scraper-declared unsupportedOptions in meta', async () => {
+    behavior.indeed = () =>
+      Promise.resolve({ jobs: [makePost()], unsupportedOptions: ['jobType', 'isRemote'] });
+    const result = await scrapeJobs({ sites: 'indeed' });
+    expect(result.meta.sites[0].unsupportedOptions).toEqual(['jobType', 'isRemote']);
+    // A dropped filter is a capability note, not a failure.
+    expect(result.meta.sites[0].status).toBe('ok');
+  });
+
   it('skips an unconvertible posting without discarding other results', async () => {
     behavior.indeed = () =>
       Promise.resolve({

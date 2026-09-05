@@ -19,7 +19,13 @@ import {
   getIndeedDomainValue,
 } from '../model';
 import { IndeedException, RateLimitException } from '../exception';
-import { createSession, createLogger, markdownConverter, extractEmailsFromText } from '../util';
+import {
+  createSession,
+  createLogger,
+  markdownConverter,
+  plainConverter,
+  extractEmailsFromText,
+} from '../util';
 import { JOB_SEARCH_QUERY, API_HEADERS } from './constant';
 import { getJobType, getCompensation, isJobRemote } from './util';
 
@@ -156,9 +162,11 @@ export class Indeed implements Scraper {
       if (!nextCursor) break;
     }
 
+    const dropped = this.buildFilters().dropped;
     return {
       jobs: jobList.slice(offset, offset + resultsWanted),
       ...(errors.length > 0 && { errors }),
+      ...(dropped.length > 0 && { unsupportedOptions: dropped }),
     };
   }
 
@@ -170,7 +178,7 @@ export class Indeed implements Scraper {
       return { jobs: [], nextCursor: null };
     }
 
-    const filters = this.buildFilters();
+    const { filters } = this.buildFilters();
     // GraphQL string literals follow JSON string rules, so JSON.stringify
     // yields a correctly escaped, quoted literal — safe against quotes,
     // backslashes, and newlines in user-supplied searchTerm/location.
@@ -231,33 +239,54 @@ export class Indeed implements Scraper {
     }
   }
 
-  private buildFilters(): string {
-    if (!this.scraperInput) return '';
+  /**
+   * Build the GraphQL filter block. Indeed's API accepts only ONE filter group
+   * per search, so when the caller sets more than one we apply a fixed
+   * precedence (hoursOld > easyApply > jobType/isRemote) and report the dropped
+   * ones in `dropped` so the orchestrator can surface them in
+   * meta.sites[].unsupportedOptions instead of dropping them silently.
+   */
+  private buildFilters(): { filters: string; dropped: string[] } {
+    const input = this.scraperInput;
+    if (!input) return { filters: '', dropped: [] };
 
-    if (this.scraperInput.hoursOld) {
-      return `
+    // jobType and isRemote share one group, so they never drop each other.
+    const set: string[] = [];
+    if (input.hoursOld) set.push('hoursOld');
+    if (input.easyApply) set.push('easyApply');
+    if (input.jobType) set.push('jobType');
+    if (input.isRemote) set.push('isRemote');
+    const droppedExcept = (kept: string[]) => set.filter((f) => !kept.includes(f));
+
+    if (input.hoursOld) {
+      return {
+        filters: `
         filters: {
           date: {
             field: "dateOnIndeed",
-            start: "${this.scraperInput.hoursOld}h"
+            start: "${input.hoursOld}h"
           }
         }
-      `;
+      `,
+        dropped: droppedExcept(['hoursOld']),
+      };
     }
 
-    if (this.scraperInput.easyApply) {
-      return `
+    if (input.easyApply) {
+      return {
+        filters: `
         filters: {
           keyword: {
             field: "indeedApplyScope",
             keys: ["DESKTOP"]
           }
         }
-      `;
+      `,
+        dropped: droppedExcept(['easyApply']),
+      };
     }
 
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-    if (this.scraperInput.jobType || this.scraperInput.isRemote) {
+    if (input.jobType || input.isRemote) {
       const jobTypeKeyMapping: Partial<Record<JobType, string>> = {
         [JobType.FULL_TIME]: 'CF3CP',
         [JobType.PART_TIME]: '75GKK',
@@ -267,18 +296,19 @@ export class Indeed implements Scraper {
 
       const keys: string[] = [];
 
-      if (this.scraperInput.jobType) {
-        const key = jobTypeKeyMapping[this.scraperInput.jobType];
+      if (input.jobType) {
+        const key = jobTypeKeyMapping[input.jobType];
         if (key) keys.push(key);
       }
 
-      if (this.scraperInput.isRemote) {
+      if (input.isRemote) {
         keys.push('DSQF7');
       }
 
       if (keys.length > 0) {
         const keysStr = keys.map((k) => `"${k}"`).join(', ');
-        return `
+        return {
+          filters: `
           filters: {
             composite: {
               filters: [{
@@ -289,11 +319,13 @@ export class Indeed implements Scraper {
               }]
             }
           }
-        `;
+        `,
+          dropped: droppedExcept(['jobType', 'isRemote']),
+        };
       }
     }
 
-    return '';
+    return { filters: '', dropped: [] };
   }
 
   private processJob(job: IndeedJobData): JobPost | null {
@@ -307,7 +339,10 @@ export class Indeed implements Scraper {
     let description = job.description.html;
     if (this.scraperInput?.descriptionFormat === DescriptionFormat.MARKDOWN) {
       description = markdownConverter(description) ?? description;
+    } else if (this.scraperInput?.descriptionFormat === DescriptionFormat.PLAIN) {
+      description = plainConverter(description) ?? description;
     }
+    // DescriptionFormat.HTML leaves the cleaned HTML as-is.
 
     const jobType = getJobType(job.attributes);
     const timestampSeconds = job.datePublished / 1000;

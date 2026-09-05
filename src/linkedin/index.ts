@@ -27,6 +27,8 @@ import {
   plainConverter,
   extractEmailsFromText,
   currencyParser,
+  currencyFromSymbol,
+  intervalFromText,
   removeAttributes,
 } from '../util';
 import { LinkedInException, RateLimitException } from '../exception';
@@ -114,7 +116,8 @@ export class LinkedIn implements Scraper {
       const params: Record<string, string | number | undefined> = {
         keywords: input.searchTerm,
         location: input.location,
-        distance: input.distance,
+        // distance is only meaningful with a location to measure from.
+        distance: input.location ? input.distance : undefined,
         f_WT: input.isRemote ? 2 : undefined,
         f_JT: input.jobType ? jobTypeCode(input.jobType) : undefined,
         pageNum: 0,
@@ -187,13 +190,17 @@ export class LinkedIn implements Scraper {
                 break;
               }
             } catch (e) {
-              log.error(`Error processing job: ${(e as Error).message}`);
+              const message = e instanceof Error ? e.message : String(e);
+              log.error(`Error processing job: ${message}`);
+              // Surface the drop so a systematically failing parser shows up as
+              // 'partial' in meta instead of looking like a clean, smaller result.
+              this.enrichmentErrors.push(`job ${jobId}: ${message}`);
             }
           }
         }
 
         if (continueSearch()) {
-          await randomDelay(this.delay, this.delay + this.bandDelay);
+          await randomDelay(this.delay, this.delay + this.bandDelay, input.signal);
           start += jobCards.length;
         }
       } catch (e) {
@@ -229,12 +236,18 @@ export class LinkedIn implements Scraper {
       if (salaryValues.length >= 2) {
         const salaryMin = salaryValues[0];
         const salaryMax = salaryValues[1];
-        const currency = salaryText[0] !== '$' ? salaryText[0] : 'USD';
+        // Map the symbol to an ISO code (so a leading '€'/'£' never leaks a raw
+        // character into Job.currency); leave it unknown when the symbol is
+        // ambiguous. Interval comes from an explicit unit in the text when
+        // present, else stays unset rather than being guessed.
+        const currency = currencyFromSymbol(salaryText) ?? undefined;
+        const interval = intervalFromText(salaryText) ?? undefined;
 
         compensation = {
+          ...(interval ? { interval } : {}),
           minAmount: Math.floor(salaryMin),
           maxAmount: Math.floor(salaryMax),
-          currency,
+          ...(currency ? { currency } : {}),
         };
       }
     }
@@ -285,7 +298,11 @@ export class LinkedIn implements Scraper {
     if (fullDescr) {
       // Pace individual detail fetches so enrichment doesn't fire a burst of
       // back-to-back page loads within a single search page.
-      await randomDelay(this.detailDelay, this.detailDelay + this.detailBandDelay);
+      await randomDelay(
+        this.detailDelay,
+        this.detailDelay + this.detailBandDelay,
+        this.scraperInput?.signal
+      );
       jobDetails = await this.getJobDetails(jobId);
       description = jobDetails.description ?? null;
     }
@@ -412,7 +429,17 @@ export class LinkedIn implements Scraper {
 
       const parts = locationString.split(', ');
 
-      if (parts.length === 2) {
+      if (parts.length === 1 && parts[0] && parts[0] !== 'N/A') {
+        // A single token is common on LinkedIn ("Singapore", "United States",
+        // "Remote"). Keep it: use it as the country when it names one, otherwise
+        // as the city, rather than discarding it and reporting an empty location.
+        const token = parts[0];
+        try {
+          location = { country: getCountryFromString(token) };
+        } catch {
+          location = { city: token, country: Country.WORLDWIDE };
+        }
+      } else if (parts.length === 2) {
         const [city, state] = parts;
         location = {
           city,
