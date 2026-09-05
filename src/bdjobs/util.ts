@@ -26,21 +26,19 @@ export function parseLocation(locationText: string, _country = 'bangladesh'): Lo
 }
 
 /**
- * Parse date text into a Date object
+ * Parse a genuine posting-date string into a Date object.
+ *
+ * IMPORTANT: this must never be fed a BDJobs "Deadline:" value. A deadline is a
+ * future application cut-off, not the publication date, so reporting it as
+ * datePosted is wrong (codex #12). The caller is responsible for only passing
+ * real posting-date text here; when none exists, datePosted stays null.
  */
 export function parseDate(dateText: string): Date | null {
   if (!dateText) return null;
 
   try {
-    // Clean up date text
-    let cleaned = dateText;
-    if (cleaned.includes('Deadline:')) {
-      cleaned = cleaned.replace('Deadline:', '').trim();
-    }
-
-    // Try parsing with Date constructor
-    const date = new Date(cleaned);
-    if (!isNaN(date.getTime())) {
+    const date = new Date(dateText.trim());
+    if (!Number.isNaN(date.getTime())) {
       return date;
     }
 
@@ -86,13 +84,13 @@ export function isJobRemote(
 
   let fullText = title.toLowerCase();
   if (description) {
-    fullText += ' ' + description.toLowerCase();
+    fullText += ` ${description.toLowerCase()}`;
   }
   if (location?.city) {
-    fullText += ' ' + location.city.toLowerCase();
+    fullText += ` ${location.city.toLowerCase()}`;
   }
   if (location?.state) {
-    fullText += ' ' + location.state.toLowerCase();
+    fullText += ` ${location.state.toLowerCase()}`;
   }
 
   return remoteKeywords.some((keyword) => fullText.includes(keyword));

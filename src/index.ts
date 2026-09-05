@@ -1,5 +1,5 @@
 /**
- * ts-jobspy — TypeScript job scraper.
+ * ts-jobspy - TypeScript job scraper.
  *
  * Started as a TypeScript port of python-jobspy (https://github.com/speedyapply/JobSpy)
  * by Cullen Watson and Zachary Hampton; diverged as of v3 into its own API.
@@ -147,6 +147,18 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
   let jobs: Job[] = [];
   const siteMetas: SiteMeta[] = [];
 
+  // Which filter options the caller actually supplied, read from the RAW options
+  // (not resolved, which fills defaults like distance:50 / isRemote:false). Each
+  // scraper declares the filters it structurally cannot honor; the orchestrator
+  // intersects that with what was actually requested, so unsupportedOptions is
+  // consistent across scrapers and an explicit `distance: 50` is representable.
+  const requestedFilters = new Set<string>();
+  if (options.distance !== undefined) requestedFilters.add('distance');
+  if (options.jobType !== undefined) requestedFilters.add('jobType');
+  if (options.easyApply === true) requestedFilters.add('easyApply');
+  if (options.hoursOld !== undefined) requestedFilters.add('hoursOld');
+  if (options.isRemote === true) requestedFilters.add('isRemote');
+
   for (const outcome of outcomes) {
     // Safety net: never emit more than resultsWanted per site, even if a scraper
     // over-returns (e.g. a board that ignores the cap on the last page).
@@ -164,7 +176,12 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
         );
       }
     }
-    siteMetas.push(toSiteMeta({ ...outcome, posts: cappedPosts.slice(0, converted) }));
+    const unsupportedOptions = (outcome.unsupportedOptions ?? []).filter((o) =>
+      requestedFilters.has(o)
+    );
+    siteMetas.push(
+      toSiteMeta({ ...outcome, posts: cappedPosts.slice(0, converted), unsupportedOptions })
+    );
   }
 
   // Strict mode rejects on any failure or interruption, including conversion

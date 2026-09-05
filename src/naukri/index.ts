@@ -6,8 +6,10 @@
  */
 
 import type { AxiosInstance } from 'axios';
+import { NaukriException, RateLimitException } from '../exception';
 import {
   type Compensation,
+  CompensationInterval,
   Country,
   DescriptionFormat,
   type JobPost,
@@ -21,7 +23,9 @@ import {
   createLogger,
   createSession,
   extractEmailsFromText,
+  intervalFromText,
   markdownConverter,
+  plainConverter,
   randomDelay,
 } from '../util';
 import { HEADERS } from './constant';
@@ -87,26 +91,48 @@ export class Naukri implements Scraper {
     this.session = createSession({
       proxies: this.proxies,
       caCert: this.caCert,
+      userAgent: this.userAgent,
       hasRetry: true,
       retryDelay: 5,
     });
 
-    // Update session headers
+    // Update session headers; a caller-supplied userAgent overrides the default.
     if (this.session.defaults.headers) {
       Object.assign(this.session.defaults.headers, HEADERS);
+      if (this.userAgent) {
+        this.session.defaults.headers['user-agent'] = this.userAgent;
+      }
     }
 
     log.info('Naukri scraper initialized');
 
     const jobList: JobPost[] = [];
+    const errors: string[] = [];
     const seenIds = new Set<string>();
-    const start = input.offset ?? 0;
-    let page = Math.floor(start / this.jobsPerPage) + 1;
+    // Naukri paginates in fixed pages of `jobsPerPage`. Align to the page that
+    // contains `offset`, collect the intra-page remainder, and slice it off at
+    // the end so `offset` is honored exactly (the API cannot start mid-page).
+    const offset = input.offset ?? 0;
+    let page = Math.floor(offset / this.jobsPerPage) + 1;
+    const skip = offset - (page - 1) * this.jobsPerPage;
     let requestCount = 0;
     const secondsOld = input.hoursOld ? input.hoursOld * 3600 : null;
     const resultsWanted = input.resultsWanted ?? 15;
+    const targetCount = resultsWanted + skip;
 
-    const continueSearch = () => jobList.length < resultsWanted && page <= 50;
+    // Options Naukri's search request cannot express. Declared unconditionally:
+    // the orchestrator intersects this list with the options the caller actually
+    // supplied, so a filter is never reported unless it was set. isRemote (remote
+    // param) and hoursOld (days param) ARE applied, so they are omitted here.
+    const unsupportedOptions: string[] = ['distance', 'jobType', 'easyApply'];
+
+    const finish = (): JobResponse => ({
+      jobs: jobList.slice(skip, skip + resultsWanted),
+      ...(errors.length > 0 && { errors }),
+      ...(unsupportedOptions.length > 0 && { unsupportedOptions }),
+    });
+
+    const continueSearch = () => jobList.length < targetCount && page <= 50;
 
     while (continueSearch()) {
       requestCount += 1;
@@ -129,7 +155,10 @@ export class Naukri implements Scraper {
       };
 
       if (secondsOld) {
-        params.days = Math.floor(secondsOld / 86400);
+        // Naukri filters by whole days. Sub-day values would floor to 0 and
+        // silently disable the filter, so apply it at day granularity with a
+        // floor of 1 day; values >= 24h map to their exact day count.
+        params.days = Math.max(1, Math.floor(secondsOld / 86400));
       }
 
       // Filter out undefined values
@@ -142,13 +171,20 @@ export class Naukri implements Scraper {
         const response = await this.session.get<NaukriApiResponse>(this.baseUrl, {
           params: filteredParams,
           timeout: 10000,
+          signal: input.signal,
         });
 
         if (response.status < 200 || response.status >= 400) {
-          log.error(
-            `Naukri API response status code ${response.status} - ${JSON.stringify(response.data)}`
-          );
-          return { jobs: jobList };
+          const failure =
+            response.status === 429
+              ? new RateLimitException('Naukri', 'Naukri responded with HTTP 429 (rate limited)')
+              : new NaukriException(`Naukri API responded with status code ${response.status}`);
+          log.error(failure.message);
+          // Nothing collected: fail the whole scrape. Partially collected:
+          // report what we have, recording the interruption honestly.
+          if (jobList.length === 0) throw failure;
+          errors.push(`page ${requestCount}: ${failure.message}`);
+          return finish();
         }
 
         const data = response.data;
@@ -161,17 +197,22 @@ export class Naukri implements Scraper {
           break;
         }
 
-        for (const job of jobDetails) {
+        for (const [index, job] of jobDetails.entries()) {
           const jobId = job.jobId;
-          if (!jobId || seenIds.has(jobId)) {
+          if (!jobId) {
+            // Surface a malformed entry so a systematically broken feed reads as
+            // 'partial' rather than cleanly smaller. Don't throw for it.
+            errors.push(`job ${index}: missing id`);
+            continue;
+          }
+          if (seenIds.has(jobId)) {
             continue;
           }
           seenIds.add(jobId);
           log.debug(`Processing job ID: ${jobId}`);
 
           try {
-            const fetchDesc = input.linkedinFetchDescription ?? false;
-            const jobPost = this.processJob(job, jobId, fetchDesc);
+            const jobPost = this.processJob(job, jobId);
             if (jobPost) {
               jobList.push(jobPost);
               log.info(`Added job: ${jobPost.title} (ID: ${jobId})`);
@@ -180,25 +221,42 @@ export class Naukri implements Scraper {
               break;
             }
           } catch (e) {
-            log.error(`Error processing job ID ${jobId}: ${(e as Error).message}`);
+            const message = e instanceof Error ? e.message : String(e);
+            log.error(`Error processing job ID ${jobId}: ${message}`);
+            // Surface the drop so a systematically failing parser shows up as
+            // 'partial' in meta instead of looking like a clean, smaller result.
+            errors.push(`job ${jobId}: ${message}`);
           }
         }
 
+        // A short page is terminal: Naukri returned fewer than a full page, so
+        // there are no further results. Stop rather than requesting empty pages
+        // up to the page<=50 backstop.
+        if (jobDetails.length < this.jobsPerPage) {
+          log.info('Received a short page; no more results.');
+          break;
+        }
+
         if (continueSearch()) {
-          await randomDelay(this.delay, this.delay + this.bandDelay);
+          await randomDelay(this.delay, this.delay + this.bandDelay, input.signal);
           page += 1;
         }
       } catch (e) {
-        log.error(`Naukri API request failed: ${(e as Error).message}`);
-        return { jobs: jobList };
+        const error = e instanceof Error ? e : new Error(String(e));
+        log.error(`Naukri API request failed: ${error.message}`);
+        // Nothing collected: propagate so the orchestrator marks the site
+        // 'error'. Partially collected: return what we have with the error noted.
+        if (jobList.length === 0) throw error;
+        errors.push(`page ${requestCount}: ${error.message}`);
+        return finish();
       }
     }
 
     log.info(`Scraping completed. Total jobs collected: ${jobList.length}`);
-    return { jobs: jobList.slice(0, resultsWanted) };
+    return finish();
   }
 
-  private processJob(job: NaukriJobData, jobId: string, fullDescr: boolean): JobPost | null {
+  private processJob(job: NaukriJobData, jobId: string): JobPost | null {
     const title = job.title ?? 'N/A';
     const company = job.companyName ?? 'N/A';
     const companyUrl = job.staticUrl ? `https://www.naukri.com/${job.staticUrl}` : null;
@@ -208,14 +266,22 @@ export class Naukri implements Scraper {
     const datePosted = this.parseDate(job.footerPlaceholderLabel, job.createdDate);
 
     const jobUrl = `https://www.naukri.com${job.jdURL ?? `/job/${jobId}`}`;
-    const rawDescription = fullDescr ? job.jobDescription : null;
+    // The description is always present in Naukri's search response, so use it
+    // directly — it must not be gated behind linkedinFetchDescription.
+    const rawDescription = job.jobDescription ?? null;
 
-    const jobType = parseJobType(rawDescription ?? null);
-    const companyIndustry = parseCompanyIndustry(rawDescription ?? null);
+    const jobType = parseJobType(rawDescription);
+    const companyIndustry = parseCompanyIndustry(rawDescription);
 
     let description = rawDescription;
-    if (description && this.scraperInput?.descriptionFormat === DescriptionFormat.MARKDOWN) {
-      description = markdownConverter(description) ?? description;
+    if (description) {
+      const format = this.scraperInput?.descriptionFormat;
+      if (format === DescriptionFormat.MARKDOWN) {
+        description = markdownConverter(description) ?? description;
+      } else if (format === DescriptionFormat.PLAIN) {
+        description = plainConverter(description) ?? description;
+      }
+      // DescriptionFormat.HTML (and the default) leaves the description as-is.
     }
 
     const remote = isJobRemote(title, description ?? '', location);
@@ -304,8 +370,13 @@ export class Naukri implements Scraper {
             maxSalary *= 10000000;
           }
 
-          log.debug(`Parsed salary: ${minSalary} - ${maxSalary} INR`);
+          // Naukri quotes Lacs/Cr amounts per annum (usually "... P.A."), so
+          // record the yearly interval instead of leaving it unset.
+          const interval = intervalFromText(salaryText) ?? CompensationInterval.YEARLY;
+
+          log.debug(`Parsed salary: ${minSalary} - ${maxSalary} INR (${interval})`);
           return {
+            interval,
             minAmount: Math.floor(minSalary),
             maxAmount: Math.floor(maxSalary),
             currency,

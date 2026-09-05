@@ -95,13 +95,22 @@ describe('honest per-site meta', () => {
     expect(result.jobs).toHaveLength(1);
   });
 
-  it('surfaces a scraper-declared unsupportedOptions in meta', async () => {
+  it('surfaces a scraper-declared unsupportedOptions in meta (only for requested options)', async () => {
     behavior.indeed = () =>
       Promise.resolve({ jobs: [makePost()], unsupportedOptions: ['jobType', 'isRemote'] });
-    const result = await scrapeJobs({ sites: 'indeed' });
+    // Both options are actually requested, so both surface.
+    const result = await scrapeJobs({ sites: 'indeed', jobType: 'fulltime', isRemote: true });
     expect(result.meta.sites[0].unsupportedOptions).toEqual(['jobType', 'isRemote']);
     // A dropped filter is a capability note, not a failure.
     expect(result.meta.sites[0].status).toBe('ok');
+  });
+
+  it('drops a scraper-declared unsupportedOptions the caller never requested', async () => {
+    behavior.indeed = () =>
+      Promise.resolve({ jobs: [makePost()], unsupportedOptions: ['jobType', 'isRemote'] });
+    // Neither option was set, so neither is reported (no false-positive noise).
+    const result = await scrapeJobs({ sites: 'indeed' });
+    expect(result.meta.sites[0].unsupportedOptions).toBeUndefined();
   });
 
   it('skips an unconvertible posting without discarding other results', async () => {

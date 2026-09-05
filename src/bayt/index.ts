@@ -7,6 +7,7 @@
 
 import type { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import {
   type JobPost,
   type JobResponse,
@@ -17,8 +18,15 @@ import {
   type Scraper,
 } from '../model';
 import { createSession, createLogger, randomDelay } from '../util';
+import { BaytException, JobSpyException, RateLimitException } from '../exception';
 
 const log = createLogger('Bayt');
+
+/**
+ * A single job-listing DOM node as returned by cheerio's `toArray()`. Bayt
+ * loads each node individually to scope the per-listing selectors below.
+ */
+type BaytJobElement = AnyNode;
 
 export class BaytScraper implements Scraper {
   site = Site.BAYT;
@@ -42,18 +50,65 @@ export class BaytScraper implements Scraper {
     this.session = createSession({
       proxies: this.proxies,
       caCert: this.caCert,
+      userAgent: this.userAgent,
       hasRetry: true,
     });
 
+    // Bayt's search only accepts a keyword query and page number, so these
+    // filters are structurally unsupported. Declare them unconditionally; the
+    // orchestrator intersects this list with the options the caller actually
+    // set before surfacing them in meta.sites[].unsupportedOptions.
+    const unsupportedOptions: string[] = [
+      'distance',
+      'jobType',
+      'isRemote',
+      'easyApply',
+      'hoursOld',
+    ];
+
     const jobList: JobPost[] = [];
-    let page = 1;
+    const errors: string[] = [];
     const resultsWanted = input.resultsWanted ?? 10;
+    const offset = input.offset ?? 0;
+    // Bayt paginates page-by-page with no guaranteed fixed page size, so rather
+    // than jump to a computed start page (which could misalign) collect from
+    // page 1 up to offset + resultsWanted and slice the window off at the end.
+    const target = offset + resultsWanted;
+    let page = 1;
 
-    while (jobList.length < resultsWanted) {
+    const finish = (): JobResponse => ({
+      jobs: jobList.slice(offset, offset + resultsWanted),
+      ...(errors.length > 0 && { errors }),
+      ...(unsupportedOptions.length > 0 && { unsupportedOptions }),
+    });
+
+    while (jobList.length < target) {
       log.info(`Fetching Bayt jobs page ${page}`);
-      const jobElements = await this.fetchJobs(input.searchTerm ?? '', page);
 
-      if (!jobElements || jobElements.length === 0) {
+      let jobElements: BaytJobElement[];
+      try {
+        // Pace requests between pages. Kept inside this try so that an abort
+        // fired during the delay is handled by the same partial-vs-throw logic
+        // below instead of propagating out and discarding jobs already collected.
+        if (page > 1) {
+          await randomDelay(this.delay, this.delay + this.bandDelay, input.signal);
+        }
+        jobElements = await this.fetchJobs(input.searchTerm ?? '', page, input.signal);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        log.error(`Bayt: Error fetching jobs - ${message}`);
+        // Nothing collected yet: the whole scrape failed, so throw. Preserve a
+        // typed JobSpy/RateLimit exception; wrap anything else as BaytException.
+        if (jobList.length === 0) {
+          if (e instanceof JobSpyException) throw e;
+          throw new BaytException(message);
+        }
+        // Partially collected: report what we have, recording the interruption.
+        errors.push(`page ${page}: ${message}`);
+        return finish();
+      }
+
+      if (jobElements.length === 0) {
         break;
       }
 
@@ -64,12 +119,16 @@ export class BaytScraper implements Scraper {
           const jobPost = this.extractJobInfo(job);
           if (jobPost) {
             jobList.push(jobPost);
-            if (jobList.length >= resultsWanted) {
+            if (jobList.length >= target) {
               break;
             }
           }
         } catch (e) {
-          log.error(`Bayt: Error extracting job info: ${(e as Error).message}`);
+          const message = e instanceof Error ? e.message : String(e);
+          log.error(`Bayt: Error extracting job info: ${message}`);
+          // Surface the drop so a systematically failing parser shows up as a
+          // partial result instead of looking like a clean, smaller one.
+          errors.push(`page ${page}: extract failed — ${message}`);
         }
       }
 
@@ -79,37 +138,45 @@ export class BaytScraper implements Scraper {
       }
 
       page += 1;
-      await randomDelay(this.delay, this.delay + this.bandDelay);
     }
 
-    return { jobs: jobList.slice(0, resultsWanted) };
+    // Collected nothing, but the parser errored on every listing it saw: that
+    // is a parser break, not an honestly empty search — throw rather than
+    // returning a silent empty result.
+    if (jobList.length === 0 && errors.length > 0) {
+      throw new BaytException(`Bayt: failed to extract any jobs — ${errors[0]}`);
+    }
+
+    return finish();
   }
 
   private async fetchJobs(
     query: string,
-    page: number
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ): Promise<any[] | null> {
-    if (!this.session) return null;
-
-    try {
-      const url = `${this.baseUrl}/en/international/jobs/${query}-jobs/?page=${page}`;
-      const response = await this.session.get(url);
-
-      const $ = cheerio.load(response.data as string);
-      const jobListings = $('li[data-js-job]').toArray();
-
-      log.debug(`Found ${jobListings.length} job listing elements`);
-      return jobListings;
-    } catch (e) {
-      log.error(`Bayt: Error fetching jobs - ${(e as Error).message}`);
-      return null;
+    page: number,
+    signal?: AbortSignal
+  ): Promise<BaytJobElement[]> {
+    if (!this.session) {
+      throw new BaytException('Bayt session was not initialized');
     }
+
+    const url = `${this.baseUrl}/en/international/jobs/${query}-jobs/?page=${page}`;
+    const response = await this.session.get(url, { signal });
+
+    if (response.status === 429) {
+      throw new RateLimitException('Bayt', 'Bayt responded with HTTP 429 (rate limited)');
+    }
+    if (response.status < 200 || response.status >= 400) {
+      throw new BaytException(`Bayt responded with status code ${response.status}`);
+    }
+
+    const $ = cheerio.load(response.data as string);
+    const jobListings = $('li[data-js-job]').toArray();
+
+    log.debug(`Found ${jobListings.length} job listing elements`);
+    return jobListings;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private extractJobInfo(jobElement: any): JobPost | null {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+  private extractJobInfo(jobElement: BaytJobElement): JobPost | null {
     const $ = cheerio.load(jobElement);
 
     // Find the h2 element holding the title and link
@@ -150,14 +217,11 @@ export class BaytScraper implements Scraper {
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-  private extractJobUrl(jobGeneralInfo: any): string | null {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  private extractJobUrl(jobGeneralInfo: cheerio.Cheerio<BaytJobElement>): string | null {
     const aTag = jobGeneralInfo.find('a').first();
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-    if (aTag.length && aTag.attr('href')) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      return this.baseUrl + (aTag.attr('href') as string).trim();
+    const href = aTag.attr('href');
+    if (aTag.length && href) {
+      return this.baseUrl + href.trim();
     }
     return null;
   }
