@@ -43,6 +43,13 @@ import {
 
 const log = createLogger('LinkedIn');
 
+/** True when an error is an aborted-request signal (timeout cancellation). */
+function isAbortError(e: unknown): boolean {
+  if (typeof e !== 'object' || e === null) return false;
+  const err = e as { name?: string; code?: string };
+  return err.name === 'AbortError' || err.name === 'CanceledError' || err.code === 'ERR_CANCELED';
+}
+
 export class LinkedIn implements Scraper {
   site = Site.LINKEDIN;
   proxies?: string[];
@@ -406,6 +413,9 @@ export class LinkedIn implements Scraper {
         jobFunction,
       };
     } catch (e) {
+      // A timeout during enrichment must abort promptly, not degrade to a
+      // missing description and let the scrape keep running.
+      if (isAbortError(e)) throw e;
       this.enrichmentErrors.push(
         `job ${jobId}: description fetch failed - ${e instanceof Error ? e.message : String(e)}`
       );

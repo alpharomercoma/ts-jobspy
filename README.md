@@ -185,18 +185,18 @@ Blocked/untested sites can still be requested - the per-site `meta` entry will t
 
 ## Per-site option support
 
-`searchTerm`, `location`, `offset`, `resultsWanted`, and `descriptionFormat` are honored by every site. The filter options below vary by board; when you set one a site cannot express, it is listed in that site's `meta.sites[].unsupportedOptions` (never dropped silently):
+`searchTerm`, `offset`, `resultsWanted`, and `descriptionFormat` are honored by every site (Bayt and BDJobs are keyword-only and ignore `location`). The filter options below vary by board; when you set one a site cannot express, it is listed in that site's `meta.sites[].unsupportedOptions` (never dropped silently):
 
-| Site | distance | jobType | isRemote | easyApply | hoursOld |
-|------|:--------:|:-------:|:--------:|:---------:|:--------:|
-| Indeed | ✅ | ✅ | ✅ | ✅ | ✅ |
-| LinkedIn | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Google | ❌ | ✅ | ✅ | ❌ | ✅ (coarse) |
-| Glassdoor | ❌ | ✅ | ✅ | ✅ | ✅ (day) |
-| ZipRecruiter | ✅ | ✅ | ✅ | ✅ | ✅ (day) |
-| Naukri | ❌ | ❌ | ✅ | ❌ | ✅ (day) |
-| Bayt | ❌ | ❌ | ❌ | ❌ | ❌ |
-| BDJobs | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Site | location | distance | jobType | isRemote | easyApply | hoursOld |
+|------|:--------:|:--------:|:-------:|:--------:|:---------:|:--------:|
+| Indeed | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| LinkedIn | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Google | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ (coarse) |
+| Glassdoor | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ (day) |
+| ZipRecruiter | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (day) |
+| Naukri | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ (day) |
+| Bayt | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| BDJobs | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 Notes: Indeed's API accepts only **one** filter group per search (`hoursOld`, or `easyApply`, or `jobType`/`isRemote` together); when you combine them the lower-precedence ones are reported in `unsupportedOptions`. "(day)" means the site filters at whole-day granularity, so a sub-day `hoursOld` is applied as one day. "(coarse)" means Google maps `hoursOld` to broad buckets (today/3 days/week/month). Support for the blocked sites reflects what their request-building code sends and is not verified live.
 

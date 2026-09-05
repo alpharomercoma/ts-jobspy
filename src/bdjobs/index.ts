@@ -79,7 +79,7 @@ export class BDJobs implements Scraper {
     // BDJobs pages hold a variable number of cards and expose no stable page
     // size, so we cannot map a job offset onto a starting page reliably. Instead
     // we always start at page 1, accumulate everything up to offset+resultsWanted,
-    // and slice the final list to [offset, offset+resultsWanted] — which honors
+    // and slice the final list to [offset, offset+resultsWanted] - which honors
     // offset exactly and never returns more than resultsWanted.
     const offset = input.offset ?? 0;
     const resultsWanted = input.resultsWanted ?? 15;
@@ -152,7 +152,7 @@ export class BDJobs implements Scraper {
             const jobPost = await this.processJob($, jobCard);
             if (!jobPost) {
               // A genuinely malformed card (missing the required detail link) is
-              // a parse failure, not a clean skip — surface it so an all-broken
+              // a parse failure, not a clean skip - surface it so an all-broken
               // page reads as partial/error instead of cleanly empty.
               this.enrichmentErrors.push(`card ${cardIndex}: missing detail link`);
               continue;
@@ -165,7 +165,7 @@ export class BDJobs implements Scraper {
                 break;
               }
             }
-            // else: a deliberate duplicate skip — stays silent.
+            // else: a deliberate duplicate skip - stays silent.
           } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             log.error(`Error processing job card: ${message}`);
@@ -202,7 +202,7 @@ export class BDJobs implements Scraper {
    * gated on resolved values (e.g. distance's default of 50) here.
    */
   private collectUnsupportedOptions(): string[] {
-    return ['distance', 'jobType', 'isRemote', 'easyApply', 'hoursOld'];
+    return ['location', 'distance', 'jobType', 'isRemote', 'easyApply', 'hoursOld'];
   }
 
   private async processJob(
@@ -396,7 +396,7 @@ export class BDJobs implements Scraper {
       if (this.scraperInput?.signal?.aborted) {
         throw e;
       }
-      this.enrichmentErrors.push(`job ${jobUrl}: detail fetch failed — ${message}`);
+      this.enrichmentErrors.push(`job ${jobUrl}: detail fetch failed - ${message}`);
       return {};
     }
   }

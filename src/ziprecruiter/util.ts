@@ -43,7 +43,7 @@ export function addParams(scraperInput: ScraperInput): Record<string, string | n
     params.remote = 1;
   }
 
-  if (scraperInput.distance) {
+  if (scraperInput.distance !== undefined) {
     params.radius = scraperInput.distance;
   }
 

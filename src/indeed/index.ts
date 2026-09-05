@@ -140,8 +140,10 @@ export class Indeed implements Scraper {
 
       let jobs: JobPost[];
       let nextCursor: string | null;
+      let pageErrors: string[];
       try {
-        ({ jobs, nextCursor } = await this.scrapePage(cursor, pageSize));
+        ({ jobs, nextCursor, errors: pageErrors } = await this.scrapePage(cursor, pageSize));
+        if (pageErrors.length > 0) errors.push(...pageErrors);
       } catch (e) {
         // Nothing collected yet: the whole scrape failed. Partially collected:
         // report what we have, but record the interruption honestly.
@@ -173,9 +175,9 @@ export class Indeed implements Scraper {
   private async scrapePage(
     cursor: string | null,
     pageSize: number
-  ): Promise<{ jobs: JobPost[]; nextCursor: string | null }> {
+  ): Promise<{ jobs: JobPost[]; nextCursor: string | null; errors: string[] }> {
     if (!this.session || !this.scraperInput) {
-      return { jobs: [], nextCursor: null };
+      return { jobs: [], nextCursor: null, errors: [] };
     }
 
     const { filters } = this.buildFilters();
@@ -225,14 +227,23 @@ export class Indeed implements Scraper {
       }
 
       const jobList: JobPost[] = [];
+      const errors: string[] = [];
       for (const result of jobs) {
-        const processedJob = this.processJob(result.job);
-        if (processedJob) {
-          jobList.push(processedJob);
+        // Isolate per-job parsing: one malformed result must not discard the
+        // valid jobs already parsed on this page.
+        try {
+          const processedJob = this.processJob(result.job);
+          if (processedJob) {
+            jobList.push(processedJob);
+          }
+        } catch (err) {
+          errors.push(
+            `job ${result?.job?.key ?? '(unknown)'}: ${err instanceof Error ? err.message : String(err)}`
+          );
         }
       }
 
-      return { jobs: jobList, nextCursor };
+      return { jobs: jobList, nextCursor, errors };
     } catch (e) {
       log.error(`Indeed API error: ${(e as Error).message}`);
       throw e;
@@ -250,65 +261,57 @@ export class Indeed implements Scraper {
     const input = this.scraperInput;
     if (!input) return { filters: '', dropped: [] };
 
-    // jobType and isRemote share one group, so they never drop each other.
+    // Only these four job types have a known Indeed attribute key; any other
+    // value (temporary, perdiem, nights, other, summer, volunteer) cannot be
+    // expressed and is reported as dropped rather than silently ignored.
+    const jobTypeKeyMapping: Partial<Record<JobType, string>> = {
+      [JobType.FULL_TIME]: 'CF3CP',
+      [JobType.PART_TIME]: '75GKK',
+      [JobType.CONTRACT]: 'NJXCK',
+      [JobType.INTERNSHIP]: 'VDTG7',
+    };
+    const jobTypeKey = input.jobType ? jobTypeKeyMapping[input.jobType] : undefined;
+
+    // Every filter the caller requested.
     const set: string[] = [];
     if (input.hoursOld) set.push('hoursOld');
     if (input.easyApply) set.push('easyApply');
     if (input.jobType) set.push('jobType');
     if (input.isRemote) set.push('isRemote');
-    const droppedExcept = (kept: string[]) => set.filter((f) => !kept.includes(f));
+
+    // Indeed's API accepts only ONE filter group per search. Apply a fixed
+    // precedence and record which requested filters were actually applied; the
+    // rest (including an unmappable jobType) are reported as dropped.
+    let filters = '';
+    const kept: string[] = [];
 
     if (input.hoursOld) {
-      return {
-        filters: `
+      filters = `
         filters: {
           date: {
             field: "dateOnIndeed",
             start: "${input.hoursOld}h"
           }
         }
-      `,
-        dropped: droppedExcept(['hoursOld']),
-      };
-    }
-
-    if (input.easyApply) {
-      return {
-        filters: `
+      `;
+      kept.push('hoursOld');
+    } else if (input.easyApply) {
+      filters = `
         filters: {
           keyword: {
             field: "indeedApplyScope",
             keys: ["DESKTOP"]
           }
         }
-      `,
-        dropped: droppedExcept(['easyApply']),
-      };
-    }
-
-    if (input.jobType || input.isRemote) {
-      const jobTypeKeyMapping: Partial<Record<JobType, string>> = {
-        [JobType.FULL_TIME]: 'CF3CP',
-        [JobType.PART_TIME]: '75GKK',
-        [JobType.CONTRACT]: 'NJXCK',
-        [JobType.INTERNSHIP]: 'VDTG7',
-      };
-
+      `;
+      kept.push('easyApply');
+    } else if (jobTypeKey || input.isRemote) {
       const keys: string[] = [];
-
-      if (input.jobType) {
-        const key = jobTypeKeyMapping[input.jobType];
-        if (key) keys.push(key);
-      }
-
-      if (input.isRemote) {
-        keys.push('DSQF7');
-      }
-
+      if (jobTypeKey) keys.push(jobTypeKey);
+      if (input.isRemote) keys.push('DSQF7');
       if (keys.length > 0) {
         const keysStr = keys.map((k) => `"${k}"`).join(', ');
-        return {
-          filters: `
+        filters = `
           filters: {
             composite: {
               filters: [{
@@ -319,13 +322,13 @@ export class Indeed implements Scraper {
               }]
             }
           }
-        `,
-          dropped: droppedExcept(['jobType', 'isRemote']),
-        };
+        `;
+        if (jobTypeKey) kept.push('jobType');
+        if (input.isRemote) kept.push('isRemote');
       }
     }
 
-    return { filters: '', dropped: [] };
+    return { filters, dropped: set.filter((f) => !kept.includes(f)) };
   }
 
   private processJob(job: IndeedJobData): JobPost | null {

@@ -101,7 +101,7 @@ export class Google implements Scraper {
 
     if (!forwardCursor) {
       // A 200 with no forward cursor is a legitimately small/empty result set,
-      // not an error — return what we have (sliced) rather than swallowing or
+      // not an error - return what we have (sliced) rather than swallowing or
       // over-returning.
       log.warning(
         'initial cursor not found, try changing your query or there was at most 10 results'
@@ -113,7 +113,7 @@ export class Google implements Scraper {
     let cursor: string | null = forwardCursor;
 
     // Terminate on: enough jobs collected, no cursor, an unchanged cursor (no
-    // forward progress), or the hard page cap — none of which the site controls,
+    // forward progress), or the hard page cap - none of which the site controls,
     // so the loop can never run forever. Progress is measured by jobs actually
     // collected, not by seenUrls (a job whose URL is marked seen but then fails
     // to parse must not count toward the target).
@@ -158,7 +158,7 @@ export class Google implements Scraper {
    *
    * `distance` and `easyApply` are always dropped: the assembled query has no
    * place for them. jobType, isRemote and hoursOld are normally appended to the
-   * query (hoursOld only coarsely, via natural-language buckets) — but when the
+   * query (hoursOld only coarsely, via natural-language buckets) - but when the
    * caller supplies a verbatim `googleSearchTerm` override, the whole query is
    * replaced and those appended filters are lost too, so they become unsupported
    * in that mode.
@@ -303,7 +303,7 @@ export class Google implements Scraper {
     try {
       parsed = JSON.parse(jsonStr) as unknown[][];
     } catch (e) {
-      // The page carried a job block but it could not be parsed at all — a real
+      // The page carried a job block but it could not be parsed at all - a real
       // failure, not an empty page. Throw so the caller can decide between
       // failing (nothing collected) and reporting a partial result.
       throw new GoogleJobsException(
@@ -408,13 +408,13 @@ export class Google implements Scraper {
     };
 
     // `.includes()` returns a boolean, so `??` would make the wfh check dead
-    // code — use `||` so either keyword flips isRemote true.
+    // code - use `||` so either keyword flips isRemote true.
     const lowerDescription = description?.toLowerCase();
     const isRemote =
       (lowerDescription?.includes('remote') || lowerDescription?.includes('wfh')) ?? false;
 
     return {
-      id: `go-${jobId ?? Math.random().toString(36).substr(2, 9)}`,
+      id: `go-${jobId ?? Math.random().toString(36).slice(2, 11)}`,
       title,
       companyName,
       location,

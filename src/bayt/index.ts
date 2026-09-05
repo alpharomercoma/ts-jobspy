@@ -59,6 +59,7 @@ export class BaytScraper implements Scraper {
     // orchestrator intersects this list with the options the caller actually
     // set before surfacing them in meta.sites[].unsupportedOptions.
     const unsupportedOptions: string[] = [
+      'location',
       'distance',
       'jobType',
       'isRemote',
@@ -75,6 +76,9 @@ export class BaytScraper implements Scraper {
     // page 1 up to offset + resultsWanted and slice the window off at the end.
     const target = offset + resultsWanted;
     let page = 1;
+    // Safety cap: stop even if pages keep returning non-empty DOM that yields no
+    // parseable jobs, so a selector/layout change can never loop indefinitely.
+    const maxPages = 50;
 
     const finish = (): JobResponse => ({
       jobs: jobList.slice(offset, offset + resultsWanted),
@@ -82,7 +86,7 @@ export class BaytScraper implements Scraper {
       ...(unsupportedOptions.length > 0 && { unsupportedOptions }),
     });
 
-    while (jobList.length < target) {
+    while (jobList.length < target && page <= maxPages) {
       log.info(`Fetching Bayt jobs page ${page}`);
 
       let jobElements: BaytJobElement[];
@@ -128,7 +132,7 @@ export class BaytScraper implements Scraper {
           log.error(`Bayt: Error extracting job info: ${message}`);
           // Surface the drop so a systematically failing parser shows up as a
           // partial result instead of looking like a clean, smaller one.
-          errors.push(`page ${page}: extract failed — ${message}`);
+          errors.push(`page ${page}: extract failed - ${message}`);
         }
       }
 
@@ -141,10 +145,10 @@ export class BaytScraper implements Scraper {
     }
 
     // Collected nothing, but the parser errored on every listing it saw: that
-    // is a parser break, not an honestly empty search — throw rather than
+    // is a parser break, not an honestly empty search - throw rather than
     // returning a silent empty result.
     if (jobList.length === 0 && errors.length > 0) {
-      throw new BaytException(`Bayt: failed to extract any jobs — ${errors[0]}`);
+      throw new BaytException(`Bayt: failed to extract any jobs - ${errors[0]}`);
     }
 
     return finish();
@@ -159,7 +163,10 @@ export class BaytScraper implements Scraper {
       throw new BaytException('Bayt session was not initialized');
     }
 
-    const url = `${this.baseUrl}/en/international/jobs/${query}-jobs/?page=${page}`;
+    // Slug the search term into Bayt's hyphenated path segment and encode it so
+    // slashes, '?', '#', '%', or Unicode can't corrupt the URL structure.
+    const slug = encodeURIComponent(query.trim().replace(/\s+/g, '-'));
+    const url = `${this.baseUrl}/en/international/jobs/${slug}-jobs/?page=${page}`;
     const response = await this.session.get(url, { signal });
 
     if (response.status === 429) {

@@ -357,6 +357,9 @@ export function currencyFromSymbol(text: string): string | null {
   for (const [prefix, iso] of prefixToIso) {
     if (trimmed.startsWith(prefix)) return iso;
   }
+  // South African Rand: only when 'R' directly precedes an amount (e.g. 'R85,000'),
+  // never for words that merely start with R ('Rate:', 'Range:', 'Remote:').
+  if (/^R\s?\d/.test(trimmed)) return 'ZAR';
   const symbolToIso: Record<string, string> = {
     $: 'USD',
     '£': 'GBP',
@@ -366,7 +369,6 @@ export function currencyFromSymbol(text: string): string | null {
     '₺': 'TRY',
     '₪': 'ILS',
     '₽': 'RUB',
-    R: 'ZAR',
   };
   return symbolToIso[trimmed[0]] ?? null;
 }
@@ -438,7 +440,9 @@ export function intervalFromText(text: string): CompensationInterval | null {
   if (/(per\s*week|\/\s*w(ee)?k|weekly|an?\s+week)/.test(t)) return CompensationInterval.WEEKLY;
   if (/(per\s*month|\/\s*mo(nth)?|monthly|an?\s+month)/.test(t))
     return CompensationInterval.MONTHLY;
-  if (/(per\s*(year|annum)|\/\s*y(ea)?r|p\.?\s*a\.?|yearly|annual|an?\s+year)/.test(t))
+  // "p.a." requires the dot between p and a so it does not match "pa" inside
+  // words like "part-time", "company", or "package".
+  if (/(per\s*(year|annum)|\/\s*y(ea)?r|\bp\.a\.?|yearly|annual|an?\s+year)/.test(t))
     return CompensationInterval.YEARLY;
   return null;
 }
@@ -480,7 +484,7 @@ export function extractSalary(
   if (!salaryStr) return nullResult;
 
   const minMaxPattern =
-    /\$(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)\s*[-–—]\s*(?:\$)?(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)/;
+    /\$(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)\s*[-\u2013\u2014]\s*(?:\$)?(\d+(?:,\d+)?(?:\.\d+)?)([kK]?)/;
 
   const toNum = (s: string): number => parseFloat(s.replace(/,/g, ''));
 

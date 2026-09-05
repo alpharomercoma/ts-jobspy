@@ -4,7 +4,7 @@
  *
  * These hit real job boards and are inherently flaky: datacenter IPs are often
  * blocked, LinkedIn rate-limits aggressively. Failures here usually mean IP
- * blocking, not code breakage — check meta.sites for the reported reason.
+ * blocking, not code breakage - check meta.sites for the reported reason.
  */
 import { scrapeJobs } from '../../../src';
 

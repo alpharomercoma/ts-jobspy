@@ -101,7 +101,7 @@ plus HTTP-layer param capture). Findings:
 - **Location**: `src/linkedin/index.ts` (`processJob`)
 - **Issue**: LinkedIn renders recently posted jobs with `<time class="job-search-card__listdate--new">`.
   The port only matched `time.job-search-card__listdate`, so any search dominated by fresh
-  jobs — which is exactly what `hoursOld` returns — produced `datePosted: null` for every job.
+  jobs - which is exactly what `hoursOld` returns - produced `datePosted: null` for every job.
   Upstream python-jobspy has a fallback for the `--new` class that was dropped in the port.
 - **Fix**: Restored the fallback selector (parity with upstream). Unit-tested with card
   fixtures in `test/linkedin.test.ts`; verified live (hoursOld=24 now returns 0 null dates).
@@ -115,7 +115,7 @@ plus HTTP-layer param capture). Findings:
 
 ### 3. LinkedIn `isRemote` filter is applied inconsistently by LinkedIn (Limitation)
 - **Behavior**: The scraper correctly sends `f_WT=2` (verified via HTTP capture), but the
-  unauthenticated guest API sometimes ignores it and serves a generic result set — back-to-back
+  unauthenticated guest API sometimes ignores it and serves a generic result set - back-to-back
   identical requests were observed both honoring and ignoring the filter. Additionally, the
   `isRemote` *output* field is a keyword heuristic (searches title/description/location for
   "remote"/"wfh"), same as upstream, so it can be false for jobs LinkedIn classifies as remote.
@@ -127,7 +127,7 @@ plus HTTP-layer param capture). Findings:
   jobType, isRemote, easyApply, offset (no page overlap), countryIndeed (uk.indeed.com),
   descriptionFormat html/markdown, enforceAnnualSalary (hourly→yearly conversion).
 - **LinkedIn**: searchTerm, location, resultsWanted, hoursOld (after fix #1), jobType (+ f_JT
-  param), easyApply (f_AL), offset (start param, no overlap), linkedinCompanyIds (f_C — 5/5
+  param), easyApply (f_AL), offset (start param, no overlap), linkedinCompanyIds (f_C - 5/5
   jobs from requested company), linkedinFetchDescription (descriptions + jobType populated),
   isRemote (f_WT sent; see #3). Full param assembly verified on the wire:
   `keywords, location, distance, f_WT, f_JT, f_AL, f_C, f_TPR, start`.
@@ -218,12 +218,12 @@ wall time with per-site meta reporting indeed=ok, linkedin=ok, google=empty.
 ### Google Jobs diagnosis (2026-08-31)
 
 - Plain HTTP GET of `google.com/search?udm=8` returns HTTP 200 with a ~92KB
-  "enable JS" interstitial — no jobs markup, no `data-async-fc` cursor.
+  "enable JS" interstitial - no jobs markup, no `data-async-fc` cursor.
 - Tried: consent cookies (SOCS/CONSENT), modern Chrome 141 header set, browser
   TLS impersonation via impit (Chrome profile), real browser session cookies
   replayed over curl. All still get the JS wall.
 - A real JS-executing browser (Playwright Chrome) DOES get the classic jobs
-  UI: `jsname="Yust4d"` present, 13 `data-async-fc` cursors — the scraping
+  UI: `jsname="Yust4d"` present, 13 `data-async-fc` cursors - the scraping
   protocol itself is unchanged; the gate is client fingerprinting requiring JS
   execution.
 - Upstream python-jobspy (dormant since Feb 2026) has no fix either.
@@ -254,23 +254,23 @@ metrics (jobsPerSecond, failureRate) ship in every scrape's `meta`.
 ## Round-2 Adversarial QA (2026-08-31, codex + Claude reviewer)
 
 Both reviewers independently flagged the same core issues; all addressed:
-- **429/status handling was dead code** — createSession's validateStatus rejected
+- **429/status handling was dead code** - createSession's validateStatus rejected
   non-2xx before scrapers could classify. Now validateStatus accepts all; scrapers
   classify 429→RateLimitException; retries limited to transport errors (no 429 storm).
-- **GraphQL injection** — Indeed query now escapes searchTerm/location via JSON.stringify.
+- **GraphQL injection** - Indeed query now escapes searchTerm/location via JSON.stringify.
   Verified live: `location: 'Austin, TX" ) malicious'` returns empty, not a crash.
-- **userAgent was ignored** — now threaded to LinkedIn/HTML scrapers. NOT applied to
-  Indeed (its GraphQL API requires the fixed app UA; a custom UA returns HTTP 403 —
+- **userAgent was ignored** - now threaded to LinkedIn/HTML scrapers. NOT applied to
+  Indeed (its GraphQL API requires the fixed app UA; a custom UA returns HTTP 403 -
   verified live).
-- **caCert was a no-op** — now implemented via https.Agent({ca}).
-- **timeoutMs didn't abort** — now wires an AbortController/signal into all axios calls
+- **caCert was a no-op** - now implemented via https.Agent({ca}).
+- **timeoutMs didn't abort** - now wires an AbortController/signal into all axios calls
   and aborts on timeout (rejects race first for deterministic classification).
-- **LinkedIn enrichment** — per-description fetches are now paced (jittered 1–3s) and
+- **LinkedIn enrichment** - per-description fetches are now paced (jittered 1-3s) and
   their failures are surfaced in meta (→ partial), not silently swallowed.
-- **Indeed over-fetch** — page size is min(100, resultsWanted+offset). Verified live:
+- **Indeed over-fetch** - page size is min(100, resultsWanted+offset). Verified live:
   resultsWanted:1 now returns 1 job in ~330ms instead of downloading 100.
-- **strict didn't cover conversion failures** — strict check moved after job conversion.
+- **strict didn't cover conversion failures** - strict check moved after job conversion.
 - **bannerPhotoUrl** added to the Job output (was the only dropped JobPost field).
 
 Accepted as-is: shared Indeed mobile API key (inherent to the mobile GraphQL endpoint,
-same as upstream python-jobspy); Node TLS fingerprint (documented — use proxies).
+same as upstream python-jobspy); Node TLS fingerprint (documented - use proxies).

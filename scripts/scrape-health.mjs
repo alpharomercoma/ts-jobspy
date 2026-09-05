@@ -104,7 +104,7 @@ console.log(JSON.stringify(report, null, 2));
 if (process.env.GITHUB_STEP_SUMMARY) {
   appendFileSync(
     process.env.GITHUB_STEP_SUMMARY,
-    `## Scrape health — ${report.date}\n\n${summary}\n`
+    `## Scrape health - ${report.date}\n\n${summary}\n`
   );
 }
 
@@ -114,6 +114,6 @@ if (regressions > 0) {
 }
 if (improvements > 0) {
   console.error(
-    `\n${improvements} previously blocked site(s) now respond — consider re-enabling and updating scripts/scrape-health.expected.json.`
+    `\n${improvements} previously blocked site(s) now respond - consider re-enabling and updating scripts/scrape-health.expected.json.`
   );
 }

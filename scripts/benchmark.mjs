@@ -4,7 +4,7 @@
  * Node is single-threaded with async I/O: "strategy" here means how many
  * sites overlap in flight (siteConcurrency), not OS threads. This measures
  * jobs/second and jobs/minute per site and overall, plus the failure rate,
- * for each strategy — all straight from result.meta, the same numbers users
+ * for each strategy - all straight from result.meta, the same numbers users
  * get on every scrape.
  *
  * Usage: node scripts/benchmark.mjs [resultsWanted per site, default 15]
@@ -38,7 +38,7 @@ for (const strategy of STRATEGIES) {
 }
 
 const lines = [
-  `Benchmark: ${sites.join(', ')} — ${resultsWanted} jobs/site, ${new Date().toISOString()}`,
+  `Benchmark: ${sites.join(', ')} - ${resultsWanted} jobs/site, ${new Date().toISOString()}`,
   '',
   '| Strategy | Site | Jobs | Duration | Jobs/sec | Jobs/min | Status |',
   '|----------|------|------|----------|----------|----------|--------|',

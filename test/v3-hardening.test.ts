@@ -26,6 +26,14 @@ describe('currencyFromSymbol', () => {
     expect(currencyFromSymbol('¥5,000,000')).toBeNull();
     expect(currencyFromSymbol('100000')).toBeNull();
   });
+
+  it('only treats a leading R as ZAR when it precedes an amount', () => {
+    expect(currencyFromSymbol('R85,000')).toBe('ZAR');
+    expect(currencyFromSymbol('R 85,000')).toBe('ZAR');
+    // Words that merely start with R must not be misread as Rand.
+    expect(currencyFromSymbol('Rate: $50/hr')).toBeNull();
+    expect(currencyFromSymbol('Range: $100k')).toBeNull();
+  });
 });
 
 describe('intervalFromText', () => {
@@ -38,6 +46,12 @@ describe('intervalFromText', () => {
 
   it('returns null when the text states no unit', () => {
     expect(intervalFromText('$100,000 - $120,000')).toBeNull();
+  });
+
+  it('does not match "pa" inside ordinary words (anchored p.a. only)', () => {
+    // Regression: an unanchored p.a. pattern matched "part", "package", "company".
+    expect(intervalFromText('$30 - $45 (part-time role)')).toBeNull();
+    expect(intervalFromText('great pay and package at this company')).toBeNull();
   });
 });
 
@@ -55,6 +69,14 @@ describe('extractSalary', () => {
     expect(hourly.interval).toBe(CompensationInterval.HOURLY);
     expect(hourly.minAmount).toBe(25.5);
     expect(hourly.maxAmount).toBe(30.75);
+  });
+
+  it('does not drop an unlabeled hourly-magnitude range near a "pa" word', () => {
+    // Previously "part-time" matched p.a. -> YEARLY -> 30 < lowerLimit -> null.
+    const r = extractSalary('$30 - $45 (part-time role)');
+    expect(r.interval).toBe(CompensationInterval.HOURLY);
+    expect(r.minAmount).toBe(30);
+    expect(r.maxAmount).toBe(45);
   });
 
   it('reports yearly interval after annualizing with enforceAnnualSalary', () => {

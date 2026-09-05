@@ -71,7 +71,7 @@ export interface SiteError {
 }
 
 interface SiteMetaBase {
-  site: string;
+  site: SiteName;
   /** Jobs this site contributed (before cross-site dedupe). */
   jobs: number;
   requested: number;
@@ -117,7 +117,7 @@ export interface ScrapeResult {
 
 /** Internal: a scraper's outcome plus bookkeeping. */
 export interface SiteOutcome {
-  site: string;
+  site: SiteName;
   posts: JobPost[];
   requested: number;
   durationMs: number;

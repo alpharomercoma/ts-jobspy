@@ -408,7 +408,7 @@ export class ZipRecruiter implements Scraper {
       // unenriched job, so re-throw it instead of recording an enrichment error.
       if (this.isAbortError(e)) throw e;
       this.enrichmentErrors.push(
-        `${jobUrl}: description fetch failed — ${e instanceof Error ? e.message : String(e)}`
+        `${jobUrl}: description fetch failed - ${e instanceof Error ? e.message : String(e)}`
       );
       return { descriptionFull: null, jobUrlDirect: null };
     }

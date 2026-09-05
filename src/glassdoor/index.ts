@@ -30,7 +30,7 @@ import { parseCompensation, parseLocation, getCursorForPage } from './util';
 const log = createLogger('Glassdoor');
 
 /**
- * Detect a cancellation from an aborted signal — either the DOMException raised
+ * Detect a cancellation from an aborted signal - either the DOMException raised
  * by the signal-aware sleep helpers or axios's own CanceledError
  * (name 'CanceledError' / code 'ERR_CANCELED').
  */
@@ -119,7 +119,11 @@ export class Glassdoor implements Scraper {
     try {
       this.baseUrl = getGlassdoorUrl(input.country ?? Country.USA);
     } catch {
-      this.baseUrl = 'https://www.glassdoor.com/';
+      // Do not silently fall back to the US site: returning US jobs for, say, a
+      // Bangladesh request is dishonest. Fail clearly so meta reports an error.
+      throw new GlassdoorException(
+        `Glassdoor is not available for country '${input.country ?? Country.USA}'`
+      );
     }
 
     this.session = createSession({
@@ -214,7 +218,7 @@ export class Glassdoor implements Scraper {
   /**
    * Options the Glassdoor API cannot express. Only `distance` qualifies:
    * jobType/easyApply map to filterParams, hoursOld maps to fromAge (day
-   * granularity is acceptable), and isRemote maps to the remote location — all
+   * granularity is acceptable), and isRemote maps to the remote location - all
    * are actually applied. Declared unconditionally; the orchestrator intersects
    * this with the options the caller actually supplied, so we must not gate it
    * on a value (the default is indistinguishable from a caller-set 50 here).
@@ -254,7 +258,16 @@ export class Glassdoor implements Scraper {
       throw new GlassdoorException(`Glassdoor responded with status code ${response.status}`);
     }
 
-    const resJson = response.data?.[0];
+    // A bot-block often returns HTTP 200 with an HTML body instead of the JSON
+    // array. That is a block, not an empty result, so fail rather than let it
+    // masquerade as a clean 'empty' page.
+    if (!Array.isArray(response.data)) {
+      throw new GlassdoorException(
+        'Glassdoor returned a non-JSON payload (likely a bot-block interstitial)'
+      );
+    }
+
+    const resJson = response.data[0];
 
     // Only a non-empty GraphQL errors array is a real failure; `errors: []` is a
     // successful response and must not throw.
@@ -277,7 +290,7 @@ export class Glassdoor implements Scraper {
         }
       } catch (e) {
         // A single malformed listing (unexpected nested shape) must not kill the
-        // page or the scrape — record and continue. Aborts still propagate.
+        // page or the scrape - record and continue. Aborts still propagate.
         if (isAbortError(e)) throw e;
         const id = jobData?.jobview?.job?.listingId ?? `#${i}`;
         errors.push(`job ${id}: ${e instanceof Error ? e.message : String(e)}`);
@@ -303,7 +316,9 @@ export class Glassdoor implements Scraper {
       const htmlData = response.data as string;
       const match = htmlData.match(pattern);
       return match ? match[1] : null;
-    } catch {
+    } catch (e) {
+      // A timeout during CSRF bootstrap must abort promptly, not fall through.
+      if (isAbortError(e)) throw e;
       return null;
     }
   }
@@ -347,7 +362,7 @@ export class Glassdoor implements Scraper {
       description = await this.fetchJobDescription(jobId);
     } catch (e) {
       // A single job's description failing must not fail the whole scrape, but a
-      // cancellation must stop it promptly — re-throw aborts so the page loop
+      // cancellation must stop it promptly - re-throw aborts so the page loop
       // propagates them.
       if (isAbortError(e)) throw e;
       description = null;

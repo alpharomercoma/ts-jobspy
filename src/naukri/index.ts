@@ -267,7 +267,7 @@ export class Naukri implements Scraper {
 
     const jobUrl = `https://www.naukri.com${job.jdURL ?? `/job/${jobId}`}`;
     // The description is always present in Naukri's search response, so use it
-    // directly — it must not be gated behind linkedinFetchDescription.
+    // directly - it must not be gated behind linkedinFetchDescription.
     const rawDescription = job.jobDescription ?? null;
 
     const jobType = parseJobType(rawDescription);

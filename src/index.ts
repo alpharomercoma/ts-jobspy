@@ -158,6 +158,7 @@ export async function scrapeJobs(options: ScrapeOptions = {}): Promise<ScrapeRes
   if (options.easyApply === true) requestedFilters.add('easyApply');
   if (options.hoursOld !== undefined) requestedFilters.add('hoursOld');
   if (options.isRemote === true) requestedFilters.add('isRemote');
+  if (options.location !== undefined) requestedFilters.add('location');
 
   for (const outcome of outcomes) {
     // Safety net: never emit more than resultsWanted per site, even if a scraper
@@ -322,7 +323,7 @@ async function scrapeSite(
 ): Promise<SiteOutcome> {
   const start = Date.now();
   const requested = resolved.resultsWanted;
-  const name = publicSiteName(site);
+  const name = publicSiteName(site) as SiteName;
   const outcome = (over: Partial<SiteOutcome>): SiteOutcome => ({
     site: name,
     posts: [],
@@ -371,10 +372,14 @@ async function scrapeSite(
         // The timeout won. Give the aborted scraper a brief grace window to
         // return whatever it already collected, so a partial scrape is reported
         // as 'partial' with its jobs, not discarded.
+        let graceTimer: ReturnType<typeof setTimeout> | undefined;
         const salvaged = await Promise.race([
           settle(scrapePromise),
-          new Promise<'grace'>((resolve) => setTimeout(() => resolve('grace'), ABORT_GRACE_MS)),
+          new Promise<'grace'>((resolve) => {
+            graceTimer = setTimeout(() => resolve('grace'), ABORT_GRACE_MS);
+          }),
         ]);
+        if (graceTimer !== undefined) clearTimeout(graceTimer);
         if (salvaged !== 'grace' && salvaged.kind === 'done' && salvaged.r.jobs.length > 0) {
           log.info(`${displaySite(site)}: timed out with ${salvaged.r.jobs.length} partial jobs`);
           return outcome({
