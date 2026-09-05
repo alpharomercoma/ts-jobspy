@@ -29,3 +29,6 @@ npm-debug.log*
 # Test artifacts
 *.tsbuildinfo
 .playwright-mcp/
+
+# npm pack artifacts
+*.tgz
