@@ -407,7 +407,7 @@ export class LinkedIn implements Scraper {
       };
     } catch (e) {
       this.enrichmentErrors.push(
-        `job ${jobId}: description fetch failed — ${e instanceof Error ? e.message : String(e)}`
+        `job ${jobId}: description fetch failed - ${e instanceof Error ? e.message : String(e)}`
       );
       return {};
     }

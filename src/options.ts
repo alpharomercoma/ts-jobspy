@@ -1,7 +1,7 @@
 /**
  * v3 public options: the schema for scrapeJobs().
  *
- * Every option is validated eagerly with descriptive errors — invalid input
+ * Every option is validated eagerly with descriptive errors - invalid input
  * throws InvalidInputError instead of silently falling back to a default.
  */
 
@@ -190,7 +190,7 @@ export interface ScrapeOptions {
   timeoutMs?: number;
   /**
    * Scraping strategy: how many sites are scraped in flight at once.
-   * Node runs a single thread with async I/O — there is no multithreading;
+   * Node runs a single thread with async I/O - there is no multithreading;
    * concurrency here means overlapping network requests. Default: all
    * requested sites concurrently. Set 1 for sequential (gentler on your IP).
    */

@@ -1,11 +1,31 @@
 {
-  "comment": "Expected live status per site, as verified from a residential IP. CI runners use datacenter IPs, so some sites that work locally may be blocked in CI — mark those working:false with a reason so the daily health check only alerts on true regressions.",
+  "comment": "Expected live status per site, as verified from a residential IP. CI runners use datacenter IPs, so some sites that work locally may be blocked in CI - mark those working:false with a reason so the daily health check only alerts on true regressions. The probe iterates every key here, so all supported sites are listed.",
   "sites": {
     "indeed": { "working": true },
     "linkedin": { "working": true },
     "google": {
       "working": false,
       "reason": "Google serves a JS-required interstitial to non-browser clients (verified 2026-08-31); protocol itself unchanged in real browsers"
+    },
+    "glassdoor": {
+      "working": false,
+      "reason": "TLS fingerprinting blocks datacenter/non-browser clients; may work with residential proxies"
+    },
+    "ziprecruiter": {
+      "working": false,
+      "reason": "TLS fingerprinting blocks datacenter/non-browser clients; US/CA only"
+    },
+    "bayt": {
+      "working": false,
+      "reason": "TLS fingerprinting blocks datacenter/non-browser clients"
+    },
+    "naukri": {
+      "working": false,
+      "reason": "India-focused; untested from CI, historically worked from residential IPs"
+    },
+    "bdjobs": {
+      "working": false,
+      "reason": "Bangladesh-focused; untested from CI, selectors may drift"
     }
   }
 }

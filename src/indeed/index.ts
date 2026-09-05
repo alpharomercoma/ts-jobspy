@@ -180,7 +180,7 @@ export class Indeed implements Scraper {
 
     const { filters } = this.buildFilters();
     // GraphQL string literals follow JSON string rules, so JSON.stringify
-    // yields a correctly escaped, quoted literal — safe against quotes,
+    // yields a correctly escaped, quoted literal - safe against quotes,
     // backslashes, and newlines in user-supplied searchTerm/location.
     const whatArg = this.scraperInput.searchTerm
       ? `what: ${JSON.stringify(this.scraperInput.searchTerm)}`
@@ -199,7 +199,7 @@ export class Indeed implements Scraper {
 
     // Indeed's mobile GraphQL API requires its specific app user-agent as part
     // of the handshake (a custom UA yields HTTP 403), so userAgent is
-    // deliberately not applied here — see the userAgent option docs.
+    // deliberately not applied here - see the userAgent option docs.
     const headersTemp = { ...API_HEADERS };
     headersTemp['indeed-co'] = this.apiCountryCode;
 

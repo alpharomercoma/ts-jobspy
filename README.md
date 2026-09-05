@@ -6,13 +6,13 @@ It began as a TypeScript port of [python-jobspy](https://github.com/speedyapply/
 
 ## Features
 
-- Scrapes **Indeed** & **LinkedIn** concurrently (more boards ship as they become reliably scrapable — see [Site status](#site-status))
-- **Honest results**: every scrape reports per-site status, counts, timing, and errors in `result.meta` — a blocked or failing site can never silently vanish
+- Scrapes **Indeed** & **LinkedIn** concurrently (more boards ship as they become reliably scrapable - see [Site status](#site-status))
+- **Honest results**: every scrape reports per-site status, counts, timing, and errors in `result.meta` - a blocked or failing site can never silently vanish
 - **Strict input validation**: invalid options throw a descriptive `InvalidInputError` instead of silently coercing to defaults
 - **Cross-site deduplication** (opt-in): by URL or by normalized title + company + location
 - Failure isolation: one site erroring never discards another site's jobs (opt into all-or-nothing with `strict: true`)
 - Proxy rotation support (HTTP/HTTPS/SOCKS)
-- Fully typed — the options and result schemas are plain, documented TypeScript types
+- Fully typed - the options and result schemas are plain, documented TypeScript types
 
 ## Installation
 
@@ -55,7 +55,7 @@ fs.writeFileSync('jobs.json', JSON.stringify(result.jobs, null, 2));
 
 ## Options
 
-All options are optional. Invalid values throw `InvalidInputError` up front — nothing is silently ignored.
+All options are optional. Invalid values throw `InvalidInputError` up front - nothing is silently ignored.
 
 ```plaintext
 scrapeJobs(options)
@@ -106,29 +106,33 @@ ScrapeResult
 │   └── skills: string[], experienceRange, companyRating,   // Naukri-specific
 │       companyReviewsCount, vacancyCount, workFromHomeType
 └── meta
-    ├── sites[]: { site, status, jobs, requested, durationMs, error? }
-    │     status: 'ok'      — jobs returned, no interruptions
-    │             'empty'   — site responded with zero jobs (soft block or no matches)
-    │             'partial' — some jobs collected, then interrupted (error says why)
-    │             'error'   — failed before collecting anything (error says why)
+    ├── sites[]: { site, status, jobs, requested, durationMs, jobsPerSecond,
+    │              error?, unsupportedOptions? }
+    │     status: 'ok'      - jobs returned, no interruptions
+    │             'empty'   - site responded with zero jobs (soft block or no matches)
+    │             'partial' - some jobs collected, then interrupted (error says why)
+    │             'error'   - failed before collecting anything (error says why)
+    │     unsupportedOptions: options you set that this site cannot honor
+    │              (e.g. Bayt ignores jobType) - present only when non-empty, so a
+    │              dropped filter is never silent. See the option support matrix below.
     ├── totalDurationMs
     ├── jobsPerSecond            // overall throughput (each site also reports its own)
     ├── failureRate              // failed/interrupted sites / requested sites, 0..1
     └── duplicatesRemoved
 ```
 
-Every field a site provides is passed through — filtering is yours to do.
+Every field a site provides is passed through - filtering is yours to do.
 
 ## Concurrency model & throughput
 
-Node.js runs a single thread with asynchronous I/O — there is no multithreading
+Node.js runs a single thread with asynchronous I/O - there is no multithreading
 or multiprocessing here, and none is needed: scraping is network-bound, so
 overlapping requests is what matters. The `siteConcurrency` option picks the
 strategy: by default all requested sites are scraped concurrently; `1` scrapes
 them one at a time (slower, but gentler on your IP against rate limits).
 
-Every scrape reports its own metrics in `meta` — `jobsPerSecond` per site and
-overall, `durationMs`, and `failureRate` — so throughput is measurable on every
+Every scrape reports its own metrics in `meta` - `jobsPerSecond` per site and
+overall, `durationMs`, and `failureRate` - so throughput is measurable on every
 call, not just in benchmarks. `node scripts/benchmark.mjs` (in the repo) runs
 the strategy comparison live; from a residential IP (2026-08-31, 15 jobs/site):
 
@@ -143,10 +147,10 @@ GraphQL API returns 100 jobs per request and dominates throughput.
 ## Reliability, stealth & security notes
 
 - **Rate limiting**: a 429 or block surfaces as `status: 'error'`/`'partial'` with a
-  `RateLimitException` message in `meta.sites[].error` — it never silently looks like an
+  `RateLimitException` message in `meta.sites[].error` - it never silently looks like an
   empty result. HTTP status codes are not auto-retried (only transport errors are), so a
   block is reported rather than amplified into a burst.
-- **Pacing**: LinkedIn requests — including per-job description fetches — are jittered.
+- **Pacing**: LinkedIn requests - including per-job description fetches - are jittered.
   Use `siteConcurrency: 1` and modest `resultsWanted` to stay under rate limits; add
   `proxies` for large scrapes.
 - **Fingerprint**: requests send browser-like headers but Node's TLS stack, which
@@ -154,9 +158,13 @@ GraphQL API returns 100 jobs per request and dominates throughput.
   route through residential `proxies`. `userAgent` customizes LinkedIn/HTML scrapers;
   Indeed's GraphQL API requires its fixed app user-agent, so it is left untouched there.
 - **Input safety**: `searchTerm`/`location` are safely escaped into Indeed's GraphQL query
-  (no injection). Options are strictly validated before any request.
+  (no injection). Options are strictly validated before any request, and unknown option
+  keys are rejected rather than silently ignored.
 - **`caCert`**: a PEM path trusted for all requests (e.g. behind a TLS-inspecting proxy).
-- **`timeoutMs`**: actually aborts in-flight requests (via `AbortSignal`), not just the wait.
+- **`timeoutMs`**: threads an `AbortSignal` into every scraper's requests and paced delays,
+  so a timeout actually aborts in-flight work, not just the wait. If a site had already
+  collected some jobs when the timeout fired, they are returned as `status: 'partial'`
+  rather than discarded.
 
 ## Site status
 
@@ -165,7 +173,7 @@ Live status is verified daily by a [scheduled scrape-health workflow](.github/wo
 | Site | Status | Notes |
 |------|--------|-------|
 | Indeed | ✅ Working | GraphQL API; fastest scraper (~30 jobs/sec), minimal rate limiting |
-| LinkedIn | ✅ Working | Guest API; rate limits around the 10th page — use proxies for large scrapes |
+| LinkedIn | ✅ Working | Guest API; rate limits around the 10th page - use proxies for large scrapes |
 | Google | 🚧 Blocked | Google serves a JS-required page to non-browser clients (the jobs data itself is unchanged); pursuing options |
 | Glassdoor | 🚧 Blocked | TLS fingerprinting; may work with residential proxies |
 | ZipRecruiter | 🚧 Blocked | TLS fingerprinting; US/CA only |
@@ -173,7 +181,24 @@ Live status is verified daily by a [scheduled scrape-health workflow](.github/wo
 | Naukri | ⚠️ Untested | India-focused; worked at last verification |
 | BDJobs | ⚠️ Untested | Bangladesh-focused; may need selector updates |
 
-Blocked/untested sites can still be requested — the per-site `meta` entry will tell you exactly what happened (`empty`, or `error` with the reason).
+Blocked/untested sites can still be requested - the per-site `meta` entry will tell you exactly what happened (`empty`, or `error` with the reason).
+
+## Per-site option support
+
+`searchTerm`, `location`, `offset`, `resultsWanted`, and `descriptionFormat` are honored by every site. The filter options below vary by board; when you set one a site cannot express, it is listed in that site's `meta.sites[].unsupportedOptions` (never dropped silently):
+
+| Site | distance | jobType | isRemote | easyApply | hoursOld |
+|------|:--------:|:-------:|:--------:|:---------:|:--------:|
+| Indeed | ✅ | ✅ | ✅ | ✅ | ✅ |
+| LinkedIn | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Google | ❌ | ✅ | ✅ | ❌ | ✅ (coarse) |
+| Glassdoor | ❌ | ✅ | ✅ | ✅ | ✅ (day) |
+| ZipRecruiter | ✅ | ✅ | ✅ | ✅ | ✅ (day) |
+| Naukri | ❌ | ❌ | ✅ | ❌ | ✅ (day) |
+| Bayt | ❌ | ❌ | ❌ | ❌ | ❌ |
+| BDJobs | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+Notes: Indeed's API accepts only **one** filter group per search (`hoursOld`, or `easyApply`, or `jobType`/`isRemote` together); when you combine them the lower-precedence ones are reported in `unsupportedOptions`. "(day)" means the site filters at whole-day granularity, so a sub-day `hoursOld` is applied as one day. "(coarse)" means Google maps `hoursOld` to broad buckets (today/3 days/week/month). Support for the blocked sites reflects what their request-building code sends and is not verified live.
 
 ## Limitations
 
@@ -206,7 +231,7 @@ searchTerm: '"engineering intern" software summer (java OR python OR c++) 2026 -
 A: You're rate limited. Wait between scrapes and/or pass `proxies` to rotate IPs. With v3, a rate-limited site shows up as `status: 'error'` in `meta.sites` instead of failing the whole call.
 
 **Q: How do I know if a job board changed and broke scraping?**
-A: Check `result.meta.sites` — a site that used to return `ok` and now returns `empty`/`error` has changed or blocked you. This repo's daily health workflow watches for the same drift on our side.
+A: Check `result.meta.sites` - a site that used to return `ok` and now returns `empty`/`error` has changed or blocked you. This repo's daily health workflow watches for the same drift on our side.
 
 ## Credits
 
@@ -216,4 +241,4 @@ Started as a TypeScript port of [python-jobspy](https://github.com/speedyapply/J
 
 ## License
 
-MIT License — see [LICENSE](LICENSE).
+MIT License - see [LICENSE](LICENSE).

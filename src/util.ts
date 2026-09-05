@@ -224,7 +224,7 @@ export function createSession(options: SessionOptions = {}): AxiosInstance {
       retryDelay: (retryCount) => retryCount * retryDelay * 1000,
       // Only retry transport-level failures. HTTP status codes (429/5xx) resolve
       // rather than throw (validateStatus above), so retrying them here would
-      // both never fire and, if it did, amplify a block into repeated requests —
+      // both never fire and, if it did, amplify a block into repeated requests -
       // scrapers classify those statuses and back off by returning instead.
       retryCondition: (error) => axiosRetry.isNetworkOrIdempotentRequestError(error),
     });

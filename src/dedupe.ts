@@ -1,8 +1,8 @@
 /**
  * Cross-site duplicate removal.
  *
- * 'url'     — exact match on the job's canonical URL (safe, catches same-site repeats).
- * 'content' — normalized title + company + location (catches the same posting
+ * 'url'     - exact match on the job's canonical URL (safe, catches same-site repeats).
+ * 'content' - normalized title + company + location (catches the same posting
  *             syndicated across boards). The caller feeds jobs newest-first,
  *             so the newest copy of a duplicate survives.
  */
@@ -12,7 +12,7 @@ import type { Job } from './result';
 /**
  * Unicode-aware normalization: NFKD-fold, strip diacritics (Café → cafe),
  * lowercase, and collapse everything that is not a letter or digit in any
- * script — CJK, Cyrillic, etc. are preserved, not stripped.
+ * script - CJK, Cyrillic, etc. are preserved, not stripped.
  */
 function normalize(value: string | null): string {
   return (value ?? '')

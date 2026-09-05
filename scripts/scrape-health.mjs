@@ -25,7 +25,7 @@ const PROBE = {
   searchTerm: 'software engineer',
   location: 'San Francisco, CA',
   resultsWanted: 5,
-  countryIndeed: 'usa',
+  country: 'usa',
 };
 
 async function probe(site) {

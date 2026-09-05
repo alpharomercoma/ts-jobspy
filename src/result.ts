@@ -2,7 +2,7 @@
  * v3 result schema: what scrapeJobs() resolves to.
  *
  * The envelope separates the data (jobs) from the account of how the scrape
- * went (meta). A site that fails or returns nothing never silently vanishes —
+ * went (meta). A site that fails or returns nothing never silently vanishes -
  * its entry in meta.sites says what happened.
  */
 
@@ -58,7 +58,7 @@ export interface Job {
 export type SiteStatus =
   /** Site responded and returned at least one job with no interruptions. */
   | 'ok'
-  /** Site responded but returned zero jobs — a possible soft block, or a query with no matches. */
+  /** Site responded but returned zero jobs - a possible soft block, or a query with no matches. */
   | 'empty'
   /** Some jobs were collected, then the scrape was interrupted (e.g. rate limited mid-pagination); see `error`. */
   | 'partial'
@@ -121,7 +121,7 @@ export interface SiteOutcome {
   posts: JobPost[];
   requested: number;
   durationMs: number;
-  /** True when the scraper (or job conversion) threw — even a falsy value. */
+  /** True when the scraper (or job conversion) threw - even a falsy value. */
   failed: boolean;
   /** The thrown value when failed. */
   thrown?: unknown;

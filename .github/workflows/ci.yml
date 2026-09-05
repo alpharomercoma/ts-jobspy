@@ -29,6 +29,9 @@ jobs:
       - name: Run linter
         run: npm run lint
 
+      - name: Check docs for em/en dashes
+        run: npm run lint:docs
+
       - name: Run tests
         run: npm test
 

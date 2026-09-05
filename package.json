@@ -20,6 +20,7 @@
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
     "lint": "biome check src test",
     "lint:fix": "biome check --write src test",
+    "lint:docs": "node scripts/check-dashes.mjs",
     "test": "jest",
     "test:integration": "jest test/_custom/integration --testPathIgnorePatterns=/node_modules/ --runInBand",
     "test:watch": "jest --watch",
