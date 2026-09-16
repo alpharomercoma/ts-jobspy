@@ -18,7 +18,7 @@ import {
   Site,
 } from './model';
 
-import { convertToAnnual, createLogger, extractSalary, setLoggerLevel } from './util';
+import { convertToAnnual, createLogger, extractSalary, setLoggerLevel, sanitizeHtml } from './util';
 
 import { dedupeJobs } from './dedupe';
 import {
@@ -488,7 +488,11 @@ function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
     jobFunction: post.jobFunction ?? null,
     listingType: post.listingType ?? null,
     emails: post.emails ?? [],
-    description: post.description ?? null,
+    // 'html' hands the consumer board markup, never executable markup.
+    description:
+      resolved.descriptionFormat === 'html' && post.description
+        ? sanitizeHtml(post.description)
+        : (post.description ?? null),
     companyIndustry: post.companyIndustry ?? null,
     companyUrl: post.companyUrl ?? null,
     companyLogo: post.companyLogo ?? null,

@@ -84,9 +84,31 @@ interface GlassdoorApiResponse {
   errors?: unknown[];
 }
 
+/** The JobDetailQuery body; fields are optional so a changed shape is detected. */
+interface GlassdoorDetailResponse {
+  data?: { jobview?: { job?: { description?: string | null } } };
+}
+
 interface LocationResult {
   locationId: string;
   locationType: string;
+}
+
+/** A listing that survived dedupe, with its index on the page for error labels. */
+interface PageListing {
+  jobData: GlassdoorJobListing;
+  index: number;
+}
+
+/** One search page after windowing: what was enriched, passed over, and seen. */
+interface PageResult {
+  jobs: JobPost[];
+  /** Leading unique listings passed over (never enriched) to honor the offset. */
+  skipped: number;
+  /** Raw listings the board returned on this page, before windowing. */
+  listingCount: number;
+  nextCursor: string | null;
+  errors: string[];
 }
 
 export class Glassdoor implements Scraper {
@@ -97,6 +119,10 @@ export class Glassdoor implements Scraper {
 
   private readonly jobsPerPage = 30;
   private readonly maxPages = 30;
+
+  // Bound description enrichment so a page doesn't fire one detail query per
+  // listing at once. Glassdoor blocks aggressively, so keep the burst small.
+  private readonly enrichmentConcurrency = 3;
 
   private session: AxiosInstance | null = null;
   private scraperInput: ScraperInput | null = null;
@@ -112,7 +138,7 @@ export class Glassdoor implements Scraper {
   async scrape(input: ScraperInput): Promise<JobResponse> {
     // Do NOT silently cap resultsWanted here: the site's hard cap
     // (maxPages * jobsPerPage) is enforced naturally by the page loop below,
-    // and the final slice guarantees we never return more than requested.
+    // which never collects more than the requested window.
     this.scraperInput = input;
     this.seenUrls.clear();
 
@@ -155,33 +181,33 @@ export class Glassdoor implements Scraper {
 
     const jobList: JobPost[] = [];
     const errors: string[] = [];
-    let cursor: string | null = null;
     const resultsWanted = input.resultsWanted ?? 15;
-
-    // Glassdoor paginates in fixed-size pages. Honor offset exactly: start at
-    // the page that contains it, collect the intra-page remainder plus the
-    // requested count, then slice [skip, skip + resultsWanted] at the end.
     const offset = input.offset ?? 0;
-    const rangeStart = 1 + Math.floor(offset / this.jobsPerPage);
-    const skip = offset % this.jobsPerPage;
-    const target = skip + resultsWanted;
-    // End page accounts for the starting page (the previous code computed the
-    // span from page 1 and ignored rangeStart), capped at the site's max pages.
-    const pagesNeeded = Math.ceil(target / this.jobsPerPage);
-    const rangeEnd = Math.min(rangeStart + pagesNeeded, this.maxPages + 1);
 
-    for (let page = rangeStart; page < rangeEnd; page++) {
-      log.info(`search page: ${page} / ${rangeEnd - 1}`);
+    // Glassdoor pages are addressed by opaque cursors that each page hands out
+    // for the next one, so an offset cannot jump straight to its page. Walk
+    // from page 1 (null cursor), pass over the first `offset` listings without
+    // enriching them, and enrich only until the window is full. jobList then
+    // holds exactly [offset, offset + resultsWanted) of the board's order;
+    // maxPages is the site's hard cap on how deep the walk may go.
+    let cursor: string | null = null;
+    let skipped = 0;
 
-      let jobs: JobPost[];
-      let nextCursor: string | null;
-      let pageErrors: string[];
+    for (let page = 1; page <= this.maxPages; page++) {
+      if (jobList.length >= resultsWanted) break;
+
+      log.info(`search page: ${page} (collected ${jobList.length} / ${resultsWanted})`);
+
+      let result: PageResult;
       try {
-        ({
-          jobs,
-          nextCursor,
-          errors: pageErrors,
-        } = await this.fetchJobsPage(locationId, locationType, page, cursor));
+        result = await this.fetchJobsPage(
+          locationId,
+          locationType,
+          page,
+          cursor,
+          offset - skipped,
+          resultsWanted - jobList.length
+        );
       } catch (e) {
         // Nothing collected yet: the whole scrape failed. Partially collected:
         // report what we have, but record the interruption honestly.
@@ -190,24 +216,21 @@ export class Glassdoor implements Scraper {
         break;
       }
 
-      jobList.push(...jobs);
-      errors.push(...pageErrors);
+      skipped += result.skipped;
+      jobList.push(...result.jobs);
+      errors.push(...result.errors);
 
-      if (jobs.length === 0 || jobList.length >= target) {
-        break;
-      }
+      // An empty page means the board has nothing more, whatever the window.
+      if (result.listingCount === 0) break;
 
       // No further cursor (or the API returned the same one): stop paginating.
-      // maxPages remains a backstop via rangeEnd.
-      if (!nextCursor || nextCursor === cursor) {
-        break;
-      }
-
-      cursor = nextCursor;
+      // maxPages remains a backstop via the loop bound.
+      if (!result.nextCursor || result.nextCursor === cursor) break;
+      cursor = result.nextCursor;
     }
 
     return {
-      jobs: jobList.slice(skip, skip + resultsWanted),
+      jobs: jobList,
       ...(errors.length > 0 && { errors }),
       ...(this.unsupportedOptions().length > 0 && {
         unsupportedOptions: this.unsupportedOptions(),
@@ -227,14 +250,21 @@ export class Glassdoor implements Scraper {
     return ['distance'];
   }
 
+  /**
+   * Fetch one search page and enrich only the part of it that falls inside the
+   * requested window: pass over the first `skip` unique listings, then collect
+   * up to `want` jobs. The defaults enrich the whole page.
+   */
   private async fetchJobsPage(
     locationId: string,
     locationType: string,
     pageNum: number,
-    cursor: string | null
-  ): Promise<{ jobs: JobPost[]; nextCursor: string | null; errors: string[] }> {
+    cursor: string | null,
+    skip = 0,
+    want = this.jobsPerPage
+  ): Promise<PageResult> {
     if (!this.session || !this.scraperInput) {
-      return { jobs: [], nextCursor: null, errors: [] };
+      return { jobs: [], skipped: 0, listingCount: 0, nextCursor: null, errors: [] };
     }
 
     const payload = this.addPayload(locationId, locationType, pageNum, cursor);
@@ -275,34 +305,106 @@ export class Glassdoor implements Scraper {
       throw new GlassdoorException('Error encountered in Glassdoor API response');
     }
 
-    // A structurally-thin 200 (missing data path) yields an empty page rather
-    // than a TypeError, so the site reports 'empty' instead of failing.
-    const jobsData = resJson?.data?.jobListings?.jobListings ?? [];
-    const jobs: JobPost[] = [];
-    const errors: string[] = [];
-
-    for (let i = 0; i < jobsData.length; i++) {
-      const jobData = jobsData[i];
-      try {
-        const jobPost = await this.processJob(jobData);
-        if (jobPost) {
-          jobs.push(jobPost);
-        }
-      } catch (e) {
-        // A single malformed listing (unexpected nested shape) must not kill the
-        // page or the scrape - record and continue. Aborts still propagate.
-        if (isAbortError(e)) throw e;
-        const id = jobData?.jobview?.job?.listingId ?? `#${i}`;
-        errors.push(`job ${id}: ${e instanceof Error ? e.message : String(e)}`);
-      }
+    // The listings path must exist: a 200 whose JSON lacks it is an API/schema
+    // change (or a stub returned to a blocked client), not an empty page. Only
+    // an explicit empty jobListings array is a genuinely empty result.
+    const listings: unknown = resJson?.data?.jobListings?.jobListings;
+    if (!Array.isArray(listings)) {
+      throw new GlassdoorException(
+        'Glassdoor response shape is unrecognized: data.jobListings.jobListings is missing (schema changed or request blocked)'
+      );
     }
+    const jobsData = listings;
+
+    // Dedupe before any network work so window positions count unique listings
+    // in board order, then pass over the offset without enriching it. A listing
+    // without an id stays in so processJob records it as malformed rather than
+    // letting such rows collapse into one dedupe key.
+    const fresh: PageListing[] = [];
+    (jobsData as GlassdoorJobListing[]).forEach((jobData, index) => {
+      const id = jobData?.jobview?.job?.listingId;
+      if (id !== undefined) {
+        const jobUrl = this.jobUrlFor(id);
+        if (this.seenUrls.has(jobUrl)) return;
+        this.seenUrls.add(jobUrl);
+      }
+      fresh.push({ jobData, index });
+    });
+    const skipped = Math.min(skip, fresh.length);
+    const { jobs, errors } = await this.enrichWindow(fresh.slice(skipped), want);
 
     const nextCursor = getCursorForPage(
       resJson?.data?.jobListings?.paginationCursors ?? [],
       pageNum + 1
     );
 
-    return { jobs, nextCursor, errors };
+    return { jobs, skipped, listingCount: jobsData.length, nextCursor, errors };
+  }
+
+  /**
+   * Enrich listings in board order until `want` jobs are collected or the
+   * listings run out. Each batch is sized to the remaining deficit, so a
+   * listing that fails to process is replaced by the next one on the page and
+   * no listing outside the window is ever fetched.
+   */
+  private async enrichWindow(
+    listings: PageListing[],
+    want: number
+  ): Promise<{ jobs: JobPost[]; errors: string[] }> {
+    const jobs: JobPost[] = [];
+    const errors: string[] = [];
+    let index = 0;
+
+    while (jobs.length < want && index < listings.length) {
+      const batch = listings.slice(index, index + (want - jobs.length));
+      index += batch.length;
+
+      const processed = await this.mapWithConcurrency(
+        batch,
+        this.enrichmentConcurrency,
+        async ({ jobData, index: pageIndex }): Promise<JobPost | null> => {
+          try {
+            return await this.processJob(jobData, errors);
+          } catch (e) {
+            // A single malformed listing (unexpected nested shape) must not kill
+            // the page or the scrape - record and continue. Aborts still propagate.
+            if (isAbortError(e)) throw e;
+            const id = jobData?.jobview?.job?.listingId ?? `#${pageIndex}`;
+            errors.push(`job ${id}: ${e instanceof Error ? e.message : String(e)}`);
+            return null;
+          }
+        }
+      );
+      jobs.push(...processed.filter((job): job is JobPost => job !== null));
+    }
+
+    return { jobs, errors };
+  }
+
+  /**
+   * Map over items with a bounded number of promises in flight at once,
+   * preserving input order. Description enrichment fires one detail query per
+   * listing, so this caps concurrent queries instead of launching them all
+   * simultaneously.
+   */
+  private async mapWithConcurrency<T, R>(
+    items: T[],
+    limit: number,
+    fn: (item: T) => Promise<R>
+  ): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let nextIndex = 0;
+
+    const worker = async (): Promise<void> => {
+      while (nextIndex < items.length) {
+        const current = nextIndex++;
+        results[current] = await fn(items[current]);
+      }
+    };
+
+    const workerCount = Math.min(Math.max(limit, 1), items.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    return results;
   }
 
   private async getCsrfToken(): Promise<string | null> {
@@ -323,14 +425,18 @@ export class Glassdoor implements Scraper {
     }
   }
 
-  private async processJob(jobData: GlassdoorJobListing): Promise<JobPost | null> {
-    const jobId = jobData.jobview.job.listingId;
-    const jobUrl = `${this.baseUrl}job-listing/j?jl=${jobId}`;
+  /** Canonical listing URL: the dedupe key and the job's public link. */
+  private jobUrlFor(jobId: number): string {
+    return `${this.baseUrl}job-listing/j?jl=${jobId}`;
+  }
 
-    if (this.seenUrls.has(jobUrl)) {
-      return null;
-    }
-    this.seenUrls.add(jobUrl);
+  /**
+   * Build a JobPost for one listing. A failed description fetch keeps the job
+   * (description null) and is recorded in `errors`, the page's error list.
+   */
+  private async processJob(jobData: GlassdoorJobListing, errors: string[]): Promise<JobPost> {
+    const jobId = jobData.jobview.job.listingId;
+    const jobUrl = this.jobUrlFor(jobId);
 
     const job = jobData.jobview;
     const title = job.job.jobTitleText;
@@ -361,11 +467,13 @@ export class Glassdoor implements Scraper {
     try {
       description = await this.fetchJobDescription(jobId);
     } catch (e) {
-      // A single job's description failing must not fail the whole scrape, but a
-      // cancellation must stop it promptly - re-throw aborts so the page loop
-      // propagates them.
+      // A cancellation must stop the scrape promptly, so re-throw it. Any other
+      // failure keeps the job but is recorded, never swallowed, so the site
+      // cannot report 'ok' while enrichment silently failed.
       if (isAbortError(e)) throw e;
-      description = null;
+      errors.push(
+        `job ${jobId}: description fetch failed: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
 
     const companyUrl = `${this.baseUrl}Overview/W-EI_IE${companyId}.htm`;
@@ -389,6 +497,11 @@ export class Glassdoor implements Scraper {
     };
   }
 
+  /**
+   * Fetch one listing's description. Throws on any failure (HTTP status,
+   * unrecognized shape, transport); processJob decides how to record it.
+   * Resolves null only when the listing genuinely carries no description.
+   */
   private async fetchJobDescription(jobId: number): Promise<string | null> {
     if (!this.session) return null;
 
@@ -418,36 +531,42 @@ export class Glassdoor implements Scraper {
       },
     ];
 
-    try {
-      const response = await this.session.post(url, body, { signal: this.scraperInput?.signal });
+    const response = await this.session.post<GlassdoorDetailResponse[]>(url, body, {
+      signal: this.scraperInput?.signal,
+    });
 
-      if (response.status < 200 || response.status >= 400) {
-        return null;
-      }
-
-      const data = response.data as Array<{
-        data: { jobview: { job: { description: string } } };
-      }>;
-      let desc = data[0].data.jobview.job.description;
-
-      const format = this.scraperInput?.descriptionFormat;
-      if (format === DescriptionFormat.MARKDOWN) {
-        desc = markdownConverter(desc) ?? desc;
-      } else if (format === DescriptionFormat.PLAIN) {
-        desc = plainConverter(desc) ?? desc;
-      }
-      // DescriptionFormat.HTML leaves the raw HTML as-is.
-
-      return desc;
-    } catch (e) {
-      // Propagate cancellation; treat any other failure as a missing description.
-      if (isAbortError(e)) throw e;
-      return null;
+    if (response.status < 200 || response.status >= 400) {
+      throw new GlassdoorException(
+        response.status === 429
+          ? 'HTTP 429 (blocked for too many requests)'
+          : `HTTP ${response.status}`
+      );
     }
+
+    const job = Array.isArray(response.data) ? response.data[0]?.data?.jobview?.job : undefined;
+    if (!job) {
+      throw new GlassdoorException(
+        'JobDetailQuery response shape is unrecognized (schema changed or request blocked)'
+      );
+    }
+
+    if (typeof job.description !== 'string') return null;
+    let desc: string = job.description;
+
+    const format = this.scraperInput?.descriptionFormat;
+    if (format === DescriptionFormat.MARKDOWN) {
+      desc = markdownConverter(desc) ?? desc;
+    } else if (format === DescriptionFormat.PLAIN) {
+      desc = plainConverter(desc) ?? desc;
+    }
+    // DescriptionFormat.HTML leaves the raw HTML as-is.
+
+    return desc;
   }
 
   private async getLocation(location: string, isRemote: boolean): Promise<LocationResult> {
     if (!location || isRemote) {
+      // 11047 is Glassdoor's own "Remote" pseudo-location (STATE-typed), i.e. the remote filter.
       return { locationId: '11047', locationType: 'STATE' };
     }
 

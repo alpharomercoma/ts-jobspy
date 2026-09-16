@@ -194,7 +194,9 @@ export class Indeed implements Scraper {
     const query = JOB_SEARCH_QUERY.replace('{what}', whatArg)
       .replace('{location}', locationArg)
       .replace('{limit}', String(pageSize))
-      .replace('{cursor}', cursor ? `cursor: "${cursor}"` : '')
+      // The cursor comes back from the server: escape it like the caller's strings
+      // so a malformed or tampered value cannot corrupt the next query.
+      .replace('{cursor}', cursor ? `cursor: ${JSON.stringify(cursor)}` : '')
       .replace('{filters}', filters);
 
     const payload = { query };

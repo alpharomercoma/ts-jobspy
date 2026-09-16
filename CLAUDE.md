@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ts-jobspy** is an npm library that scrapes job postings from job boards. It began as a TypeScript port of python-jobspy; as of v3 it is its own project with its own API (see MIGRATION.md). Branches: `main` is the v3+ line, `python-jobspy-parity` preserves the v2 upstream-parity line (critical fixes only), `v1-legacy` is v1.
 
-Only **Indeed** and **LinkedIn** scrapers currently work; Glassdoor, ZipRecruiter, Google, Bayt, Naukri, and BDJobs exist in the codebase but are blocked/untested (Google serves a JS-wall to non-browser clients; Glassdoor/ZipRecruiter/Bayt are TLS-fingerprint blocked). Keep `WORKING_SITES` in `src/options.ts`, the README status table, and `scripts/scrape-health.expected.json` in sync with which scrapers actually work.
+Only **Indeed** and **LinkedIn** scrapers currently work; Glassdoor, ZipRecruiter, Google, Bayt, Naukri, and BDJobs exist in the codebase but are blocked/untested (Google serves a JS-wall to non-browser clients; Glassdoor/ZipRecruiter/Bayt are TLS-fingerprint blocked; BDJobs moved to an Angular SPA at bdjobs.com/h/jobs and its old search URL redirects there). A bot wall, a redirect off the board's host, or a payload missing its expected data path must be reported as `error`, never as `empty` (see test/wall-detection.test.ts); `empty` is reserved for a genuine zero-match results page. Keep `WORKING_SITES` in `src/options.ts`, the README status table, and `scripts/scrape-health.expected.json` in sync with which scrapers actually work.
 
-Requires Node.js >= 20 (undici/cheerio `File` global compatibility).
+Requires Node.js >= 20.18.1 (the floor of the cheerio/undici dependency chain; keep `engines.node` and the README in sync with it).
 
 ## Commands
 

@@ -7,6 +7,7 @@
 
 import type { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import {
   type JobPost,
   type JobResponse,
@@ -25,9 +26,22 @@ import {
 } from '../util';
 import { BDJobsException, RateLimitException } from '../exception';
 import { HEADERS, SEARCH_PARAMS } from './constant';
-import { parseLocation, parseDate, findJobListings, isJobRemote } from './util';
+import {
+  type DetailLink,
+  parseLocation,
+  parseDate,
+  findJobListings,
+  isJobRemote,
+  resolveDetailLink,
+} from './util';
 
 const log = createLogger('BDJobs');
+
+/** A card's fields, parsed without any network access, plus where its detail page lives. */
+interface ParsedCard {
+  post: JobPost;
+  detail: DetailLink;
+}
 
 export class BDJobs implements Scraper {
   site = Site.BDJOBS;
@@ -51,6 +65,15 @@ export class BDJobs implements Scraper {
     this.proxies = options.proxies;
     this.caCert = options.caCert;
     this.userAgent = options.userAgent;
+  }
+
+  /** True when url is on the scraper's own search host (redirects elsewhere mean the endpoint moved). */
+  private sameHost(url: string): boolean {
+    try {
+      return new URL(url).host === new URL(this.baseUrl).host;
+    } catch {
+      return false;
+    }
   }
 
   async scrape(input: ScraperInput): Promise<JobResponse> {
@@ -136,6 +159,21 @@ export class BDJobs implements Scraper {
           return finish();
         }
 
+        // The session follows redirects; landing on another host means the search
+        // endpoint moved (observed live 2026-09-16: jobs.bdjobs.com 302s to the
+        // bdjobs.com/h/jobs SPA). Its markup can never match our selectors, so
+        // report the move instead of a misleading 'empty'.
+        const finalUrl = response.request?.res?.responseUrl as string | undefined;
+        if (finalUrl && !this.sameHost(finalUrl)) {
+          const moved = new BDJobsException(
+            `BDJobs redirected the search to ${finalUrl}: the search endpoint has moved and this scraper's page structure no longer matches (a site migration, not an empty result)`
+          );
+          log.error(moved.message);
+          if (jobList.length === 0) throw moved;
+          errors.push(`page ${requestCount}: ${moved.message}`);
+          return finish();
+        }
+
         const $ = cheerio.load(response.data as string);
         const jobCards = findJobListings($);
 
@@ -146,33 +184,56 @@ export class BDJobs implements Scraper {
 
         log.info(`Found ${jobCards.length} job cards on page ${page}`);
 
+        let newOnPage = 0;
         for (let cardIndex = 0; cardIndex < jobCards.length; cardIndex++) {
-          const jobCard = jobCards[cardIndex];
           try {
-            const jobPost = await this.processJob($, jobCard);
-            if (!jobPost) {
+            const card = this.parseCard(jobCards[cardIndex]);
+            if (!card) {
               // A genuinely malformed card (missing the required detail link) is
               // a parse failure, not a clean skip - surface it so an all-broken
               // page reads as partial/error instead of cleanly empty.
               this.enrichmentErrors.push(`card ${cardIndex}: missing detail link`);
               continue;
             }
-            if (jobPost.id && !seenIds.has(jobPost.id)) {
-              seenIds.add(jobPost.id);
-              jobList.push(jobPost);
-
-              if (!continueSearch()) {
-                break;
-              }
+            const { post, detail } = card;
+            // Dedupe on the id parsed from the card, before any network access,
+            // so a repeated page never re-fetches details already collected.
+            // A duplicate is a deliberate silent skip.
+            if (!post.id || seenIds.has(post.id)) {
+              continue;
             }
-            // else: a deliberate duplicate skip - stays silent.
+            seenIds.add(post.id);
+
+            if (detail.onSite) {
+              await this.enrich(post, detail.url);
+            } else {
+              // The href is scraped content: refuse to let it steer a request
+              // off-site. Name only the host, never the untrusted URL.
+              this.enrichmentErrors.push(
+                `card ${cardIndex}: detail link points off-site (${detail.target})`
+              );
+            }
+
+            jobList.push(post);
+            newOnPage += 1;
+            if (!continueSearch()) {
+              break;
+            }
           } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             log.error(`Error processing job card: ${message}`);
             // Surface the drop so a systematically failing parser shows up as
             // 'partial' instead of looking like a clean, smaller result.
-            this.enrichmentErrors.push(`job card: ${message}`);
+            this.enrichmentErrors.push(`card ${cardIndex}: ${message}`);
           }
+        }
+
+        if (newOnPage === 0) {
+          // Every card was already collected (or unusable): the board is
+          // repeating itself, so another request cannot make progress. Running
+          // out of distinct jobs is normal, not an error.
+          log.info(`Page ${page} added no new jobs; stopping`);
+          break;
         }
 
         page += 1;
@@ -205,12 +266,12 @@ export class BDJobs implements Scraper {
     return ['location', 'distance', 'jobType', 'isRemote', 'easyApply', 'hoursOld'];
   }
 
-  private async processJob(
-    _$: cheerio.CheerioAPI,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    jobCard: any
-  ): Promise<JobPost | null> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+  /**
+   * Parse a card's own fields. Performs no network access: the caller dedupes
+   * on the returned id first and only then decides whether to fetch details.
+   * Returns null when the card carries no detail link at all.
+   */
+  private parseCard(jobCard: AnyNode): ParsedCard | null {
     const $card = cheerio.load(jobCard);
 
     // Find job link
@@ -219,14 +280,16 @@ export class BDJobs implements Scraper {
       return null;
     }
 
-    let jobUrl = jobLink.attr('href') ?? '';
-    if (!jobUrl.startsWith('http')) {
-      jobUrl = new URL(jobUrl, this.baseUrl).href;
+    const detail = resolveDetailLink(jobLink.attr('href') ?? '', this.baseUrl);
+    if (!detail) {
+      throw new Error('detail link is not a valid URL');
     }
+    // Only a link that passed the host check is reported as the job's URL.
+    const jobUrl = detail.onSite ? detail.url : '';
 
     // Extract job ID from URL
-    const jobIdMatch = jobUrl.match(/jobid=([^&]+)/);
-    const jobId = jobIdMatch ? jobIdMatch[1] : `bdjobs-${this.hashCode(jobUrl)}`;
+    const jobIdMatch = detail.url.match(/jobid=([^&]+)/);
+    const jobId = jobIdMatch ? jobIdMatch[1] : `bdjobs-${this.hashCode(detail.url)}`;
 
     // Extract title
     let title = jobLink.text().trim();
@@ -276,8 +339,7 @@ export class BDJobs implements Scraper {
     // Check if remote
     const remote = isJobRemote(title, null, location);
 
-    // Create job post
-    const jobPost: JobPost = {
+    const post: JobPost = {
       id: jobId,
       title,
       companyName,
@@ -287,16 +349,18 @@ export class BDJobs implements Scraper {
       isRemote: remote,
     };
 
-    // Fetch job details
-    const jobDetails = await this.getJobDetails(jobUrl);
+    return { post, detail };
+  }
+
+  /** Fetch the detail page for an on-site link and fold its fields into the post. */
+  private async enrich(post: JobPost, detailUrl: string): Promise<void> {
+    const jobDetails = await this.getJobDetails(detailUrl);
     if (jobDetails.description) {
-      jobPost.description = jobDetails.description;
+      post.description = jobDetails.description;
     }
     if (jobDetails.jobType) {
-      jobPost.listingType = jobDetails.jobType;
+      post.listingType = jobDetails.jobType;
     }
-
-    return jobPost;
   }
 
   private async getJobDetails(

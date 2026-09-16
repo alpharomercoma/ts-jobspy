@@ -2,6 +2,16 @@
  * Google Jobs scraper constants
  */
 
+/**
+ * Markers of Google's non-browser interstitials. A 200 carrying any of these is
+ * a block (JavaScript-required page, consent wall, or "unusual traffic" sorry
+ * page), not a results page, so the scraper must error rather than report
+ * 'empty'. Observed live 2026-09-16: the enable-JavaScript page for every
+ * non-browser client.
+ */
+export const WALL_MARKERS =
+  /httpservice\/retry\/enablejs|\/sorry\/index|consent\.google\.com|unusual traffic/i;
+
 export const HEADERS_INITIAL: Record<string, string> = {
   accept:
     'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',

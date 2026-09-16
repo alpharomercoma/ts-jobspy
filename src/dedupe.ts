@@ -14,8 +14,11 @@ import type { Job } from './result';
  * lowercase, and collapse everything that is not a letter or digit in any
  * script - CJK, Cyrillic, etc. are preserved, not stripped.
  */
-function normalize(value: string | null): string {
-  return (value ?? '')
+function normalize(value: unknown): string {
+  // Scraped fields are cast, not validated, upstream: a non-string must fold to
+  // text here rather than throw and reject every site's results at once.
+  const text = typeof value === 'string' ? value : value == null ? '' : String(value);
+  return text
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
     .toLowerCase()

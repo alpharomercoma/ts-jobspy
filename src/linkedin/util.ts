@@ -7,9 +7,12 @@ import { JobType, type Location } from '../model';
 import { getEnumFromJobType } from '../util';
 
 /**
- * Get job type code for LinkedIn API
+ * LinkedIn's f_JT code for a job type. Only these five have a code; any other
+ * value (perdiem, nights, other, summer, volunteer) cannot be expressed in the
+ * search and yields undefined, so the caller reports it as unsupported instead
+ * of running an unfiltered search in silence.
  */
-export function jobTypeCode(jobType: JobType): string {
+export function jobTypeCode(jobType: JobType): string | undefined {
   const mapping: Partial<Record<JobType, string>> = {
     [JobType.FULL_TIME]: 'F',
     [JobType.PART_TIME]: 'P',
@@ -17,7 +20,7 @@ export function jobTypeCode(jobType: JobType): string {
     [JobType.CONTRACT]: 'C',
     [JobType.TEMPORARY]: 'T',
   };
-  return mapping[jobType] ?? '';
+  return mapping[jobType];
 }
 
 /**

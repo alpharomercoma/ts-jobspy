@@ -240,6 +240,8 @@ const turndownService = new TurndownService({
   headingStyle: 'atx',
   codeBlockStyle: 'fenced',
 });
+// Script and style bodies are not description text; never let them through.
+turndownService.remove(['script', 'style', 'noscript', 'iframe', 'object', 'embed']);
 
 /**
  * Convert HTML to Markdown
@@ -255,6 +257,7 @@ export function markdownConverter(html: string | null): string | null {
 export function plainConverter(html: string | null): string | null {
   if (!html) return null;
   const $ = cheerio.load(html);
+  $('script, style, noscript, iframe, object, embed').remove();
   const text = $.text();
   return text.replace(/\s+/g, ' ').trim();
 }
@@ -305,9 +308,16 @@ export function mapStrToSite(siteName: string): Site {
 }
 
 /**
- * Parse currency from string
+ * Parse a currency figure such as "$100,000", "$50.50" or "$120K" into a number.
+ *
+ * A magnitude suffix directly after the digits ("$120K", "95k/yr") scales the
+ * figure. It must be detected before the non-numeric cleanup below, which would
+ * otherwise silently drop it and report 120 for a 120000 salary (LinkedIn's
+ * compact salary cards use this form).
  */
 export function currencyParser(currencyStr: string): number {
+  const magnitude = /\d\s*[kK](?!\p{L})/u.test(currencyStr) ? 1000 : 1;
+
   // Remove any non-numerical characters except for ',' '.' or '-'
   let cleaned = currencyStr.replace(/[^-0-9.,]/g, '');
 
@@ -319,13 +329,16 @@ export function currencyParser(currencyStr: string): number {
   }
 
   // Handle decimal separator
+  let value: number;
   if (cleaned.includes('.') && cleaned.indexOf('.') >= cleaned.length - 3) {
-    return Math.round(parseFloat(cleaned) * 100) / 100;
+    value = Math.round(parseFloat(cleaned) * 100) / 100;
   } else if (cleaned.includes(',') && cleaned.indexOf(',') >= cleaned.length - 3) {
-    return Math.round(parseFloat(cleaned.replace(',', '.')) * 100) / 100;
+    value = Math.round(parseFloat(cleaned.replace(',', '.')) * 100) / 100;
+  } else {
+    value = parseFloat(cleaned);
   }
 
-  return parseFloat(cleaned);
+  return value * magnitude;
 }
 
 /**
@@ -385,6 +398,50 @@ export function removeAttributes(html: string): string {
       Object.keys(attrs).forEach((attr) => {
         element.removeAttr(attr);
       });
+    }
+  });
+  return $.html();
+}
+
+/**
+ * Elements that execute or embed code, or that make no sense inside a job
+ * description handed to a consumer. Everything else (formatting, lists, links)
+ * survives so descriptionFormat 'html' stays useful.
+ */
+const UNSAFE_ELEMENTS =
+  'script, style, noscript, iframe, frame, object, embed, applet, link, meta, base, form, input, button, textarea, select, template';
+const URL_ATTRIBUTES = new Set([
+  'href',
+  'src',
+  'xlink:href',
+  'action',
+  'formaction',
+  'poster',
+  'srcset',
+]);
+
+/**
+ * Make board HTML safe to render: drop the elements above, every event-handler
+ * attribute, and URL attributes with a script or data scheme (data:image is
+ * kept). A consumer rendering `description` with innerHTML must never execute
+ * markup that came from a job board.
+ */
+export function sanitizeHtml(html: string): string {
+  const $ = cheerio.load(html, null, false);
+  $(UNSAFE_ELEMENTS).remove();
+  $('*').each((_, el) => {
+    const element = $(el);
+    for (const name of Object.keys(element.attr() ?? {})) {
+      const lower = name.toLowerCase();
+      // Whitespace and control characters are stripped before the scheme check
+      // so "java\nscript:" cannot slip through.
+      const scheme = (element.attr(name) ?? '').replace(/[\s\p{Cc}]+/gu, '').toLowerCase();
+      const scriptScheme =
+        /^(javascript|vbscript):/.test(scheme) ||
+        (scheme.startsWith('data:') && !scheme.startsWith('data:image/'));
+      if (lower.startsWith('on') || (URL_ATTRIBUTES.has(lower) && scriptScheme)) {
+        element.removeAttr(name);
+      }
     }
   });
   return $.html();

@@ -197,6 +197,7 @@ export class Naukri implements Scraper {
           break;
         }
 
+        let newOnPage = 0;
         for (const [index, job] of jobDetails.entries()) {
           const jobId = job.jobId;
           if (!jobId) {
@@ -215,6 +216,7 @@ export class Naukri implements Scraper {
             const jobPost = this.processJob(job, jobId);
             if (jobPost) {
               jobList.push(jobPost);
+              newOnPage += 1;
               log.info(`Added job: ${jobPost.title} (ID: ${jobId})`);
             }
             if (!continueSearch()) {
@@ -234,6 +236,15 @@ export class Naukri implements Scraper {
         // up to the page<=50 backstop.
         if (jobDetails.length < this.jobsPerPage) {
           log.info('Received a short page; no more results.');
+          break;
+        }
+
+        // A full page that adds nothing is terminal too: every entry was
+        // already collected (or unusable), so the feed is repeating itself and
+        // further requests - each behind a multi-second delay - cannot make
+        // progress. Running out of distinct jobs is normal, not an error.
+        if (newOnPage === 0) {
+          log.info(`Page ${page} added no new jobs; stopping`);
           break;
         }
 

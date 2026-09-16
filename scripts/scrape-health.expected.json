@@ -5,7 +5,7 @@
     "linkedin": { "working": true },
     "google": {
       "working": false,
-      "reason": "Google serves a JS-required interstitial to non-browser clients (verified 2026-08-31); protocol itself unchanged in real browsers"
+      "reason": "Google serves a JS-required interstitial to non-browser clients (re-verified 2026-09-16); the scraper detects the wall and reports error; protocol itself unchanged in real browsers"
     },
     "glassdoor": {
       "working": false,
@@ -25,7 +25,7 @@
     },
     "bdjobs": {
       "working": false,
-      "reason": "Bangladesh-focused; untested from CI, selectors may drift"
+      "reason": "Site migrated to an Angular SPA at bdjobs.com/h/jobs backed by apiv1.bdjobs.com (observed 2026-09-16); the old search URL redirects there and the scraper reports error until ported"
     }
   }
 }

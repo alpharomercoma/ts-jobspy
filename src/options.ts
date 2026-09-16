@@ -244,9 +244,20 @@ export interface ResolvedOptions {
 
 const SITE_NAMES: readonly SiteName[] = [...WORKING_SITES, ...UNDER_MAINTENANCE_SITES];
 
-function assertInt(value: unknown, name: string, min: number): number {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min) {
-    throw new InvalidInputError(`${name} must be an integer >= ${min}, got: ${String(value)}`);
+// Generous ceilings that still stop a pathological integer from driving an
+// unbounded pagination attempt (boards themselves stop near 1000 results).
+const MAX_RESULTS_WANTED = 10_000;
+const MAX_OFFSET = 100_000;
+
+function assertInt(
+  value: unknown,
+  name: string,
+  min: number,
+  max = Number.MAX_SAFE_INTEGER
+): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
+    const range = max === Number.MAX_SAFE_INTEGER ? `>= ${min}` : `between ${min} and ${max}`;
+    throw new InvalidInputError(`${name} must be an integer ${range}, got: ${String(value)}`);
   }
   return value;
 }
@@ -465,8 +476,8 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
     resultsWanted:
       options.resultsWanted === undefined
         ? 15
-        : assertInt(options.resultsWanted, 'resultsWanted', 0),
-    offset: options.offset === undefined ? 0 : assertInt(options.offset, 'offset', 0),
+        : assertInt(options.resultsWanted, 'resultsWanted', 0, MAX_RESULTS_WANTED),
+    offset: options.offset === undefined ? 0 : assertInt(options.offset, 'offset', 0, MAX_OFFSET),
     // hoursOld: 0 would silently disable the filter downstream, so require >= 1.
     hoursOld:
       options.hoursOld === undefined ? undefined : assertInt(options.hoursOld, 'hoursOld', 1),

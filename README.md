@@ -20,7 +20,7 @@ It began as a TypeScript port of [python-jobspy](https://github.com/speedyapply/
 npm install ts-jobspy
 ```
 
-_Node.js >= [20.0.0](https://nodejs.org/) required_
+_Node.js >= [20.18.1](https://nodejs.org/) required (the floor set by the cheerio/undici dependency chain)_
 
 ## Usage
 
@@ -68,11 +68,13 @@ scrapeJobs(options)
 ├── jobType (string): fulltime, parttime, internship, contract, ...
 ├── isRemote (boolean)
 ├── easyApply (boolean): jobs hosted on the board itself
-├── resultsWanted (number): per site, default 15
-├── offset (number): skip this many results per site
+├── resultsWanted (number): per site, default 15, max 10000
+├── offset (number): skip this many results per site, max 100000
 ├── hoursOld (number): only jobs posted in the last N hours
 ├── country (string): Indeed/Glassdoor country, default 'usa'
-├── descriptionFormat ('markdown' | 'html' | 'plain'): default 'markdown'
+├── descriptionFormat ('markdown' | 'html' | 'plain'): default 'markdown'; 'html' is the
+│     board's markup with script/style/iframe elements, event handlers and script URLs
+│     removed - still treat it as untrusted content when rendering
 ├── enforceAnnualSalary (boolean): convert hourly/monthly wages to annual
 ├── dedupe ('none' | 'url' | 'content' | boolean): default 'none'
 │    'url' = exact URL match; 'content' (= true) = normalized title+company+location
@@ -81,7 +83,7 @@ scrapeJobs(options)
 ├── siteConcurrency (number): how many sites are scraped in flight at once;
 │    default all requested sites concurrently, 1 = sequential (gentler on your IP)
 ├── proxies (string | string[]): 'user:pass@host:port', rotated per request
-├── caCert (string): CA certificate path for proxies
+├── caCert (string): PEM file trusted for direct HTTPS and HTTPS-proxy connections
 ├── userAgent (string)
 ├── verbose (0 | 1 | 2): 0 errors only (default), 1 +warnings, 2 +info
 ├── linkedin ({ fetchDescription?, companyIds? }): LinkedIn-specific options
@@ -101,7 +103,7 @@ ScrapeResult
 │   ├── salarySource ('direct_data' | 'description'), interval, minAmount, maxAmount, currency
 │   ├── isRemote, jobLevel, jobFunction, listingType
 │   ├── emails: string[], description
-│   ├── companyIndustry, companyUrl, companyLogo, companyUrlDirect,
+│   ├── companyIndustry, companyUrl, companyLogo, bannerPhotoUrl, companyUrlDirect,
 │   │   companyAddresses, companyNumEmployees, companyRevenue, companyDescription
 │   └── skills: string[], experienceRange, companyRating,   // Naukri-specific
 │       companyReviewsCount, vacancyCount, workFromHomeType
@@ -109,7 +111,9 @@ ScrapeResult
     ├── sites[]: { site, status, jobs, requested, durationMs, jobsPerSecond,
     │              error?, unsupportedOptions? }
     │     status: 'ok'      - jobs returned, no interruptions
-    │             'empty'   - site responded with zero jobs (soft block or no matches)
+    │             'empty'   - a valid results page with zero jobs (no matches); a bot
+    │                         wall, a redirect off the board, or an unrecognized
+    │                         payload is reported as 'error', never as 'empty'
     │             'partial' - some jobs collected, then interrupted (error says why)
     │             'error'   - failed before collecting anything (error says why)
     │     unsupportedOptions: options you set that this site cannot honor
@@ -160,7 +164,7 @@ GraphQL API returns 100 jobs per request and dominates throughput.
 - **Input safety**: `searchTerm`/`location` are safely escaped into Indeed's GraphQL query
   (no injection). Options are strictly validated before any request, and unknown option
   keys are rejected rather than silently ignored.
-- **`caCert`**: a PEM path trusted for all requests (e.g. behind a TLS-inspecting proxy).
+- **`caCert`**: path to a regular PEM file (read once, synchronously, when the scrape starts) trusted for direct HTTPS connections and for `http(s)://` proxies (e.g. behind a TLS-inspecting proxy). SOCKS proxies use the system trust store.
 - **`timeoutMs`**: threads an `AbortSignal` into every scraper's requests and paced delays,
   so a timeout actually aborts in-flight work, not just the wait. If a site had already
   collected some jobs when the timeout fired, they are returned as `status: 'partial'`
@@ -174,14 +178,14 @@ Live status is verified daily by a [scheduled scrape-health workflow](.github/wo
 |------|--------|-------|
 | Indeed | ✅ Working | GraphQL API; fastest scraper (~30 jobs/sec), minimal rate limiting |
 | LinkedIn | ✅ Working | Guest API; rate limits around the 10th page - use proxies for large scrapes |
-| Google | 🚧 Blocked | Google serves a JS-required page to non-browser clients (the jobs data itself is unchanged); pursuing options |
+| Google | 🚧 Blocked | Serves a JS-required interstitial to non-browser clients (the jobs data itself is unchanged); the scraper detects the wall and reports `error`, never a misleading `empty` |
 | Glassdoor | 🚧 Blocked | TLS fingerprinting; may work with residential proxies |
 | ZipRecruiter | 🚧 Blocked | TLS fingerprinting; US/CA only |
 | Bayt | 🚧 Blocked | TLS fingerprinting |
 | Naukri | ⚠️ Untested | India-focused; worked at last verification |
-| BDJobs | ⚠️ Untested | Bangladesh-focused; may need selector updates |
+| BDJobs | 🚧 Moved | The site migrated to an Angular SPA at bdjobs.com/h/jobs (backed by apiv1.bdjobs.com); the old search URL redirects there, which the scraper detects and reports as `error` until it is ported |
 
-Blocked/untested sites can still be requested - the per-site `meta` entry will tell you exactly what happened (`empty`, or `error` with the reason).
+Blocked/untested sites can still be requested - the per-site `meta` entry will tell you exactly what happened (`error` with the reason, or `empty` only when the board genuinely answered with no matches).
 
 ## Per-site option support
 
@@ -189,16 +193,18 @@ Blocked/untested sites can still be requested - the per-site `meta` entry will t
 
 | Site | location | distance | jobType | isRemote | easyApply | hoursOld |
 |------|:--------:|:--------:|:-------:|:--------:|:---------:|:--------:|
-| Indeed | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| LinkedIn | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Google | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ (coarse) |
+| Indeed | ✅ | ✅ | ✅ (fulltime, parttime, contract, internship) | ✅ | ✅ | ✅ |
+| LinkedIn | ✅ | ✅ | ✅ (fulltime, parttime, contract, temporary, internship) | ✅ | ✅ | ✅ |
+| Google | ✅ | ❌ | ✅ * | ✅ * | ❌ | ✅ (coarse) * |
 | Glassdoor | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ (day) |
 | ZipRecruiter | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (day) |
 | Naukri | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ (day) |
 | Bayt | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | BDJobs | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-Notes: Indeed's API accepts only **one** filter group per search (`hoursOld`, or `easyApply`, or `jobType`/`isRemote` together); when you combine them the lower-precedence ones are reported in `unsupportedOptions`. "(day)" means the site filters at whole-day granularity, so a sub-day `hoursOld` is applied as one day. "(coarse)" means Google maps `hoursOld` to broad buckets (today/3 days/week/month). Support for the blocked sites reflects what their request-building code sends and is not verified live.
+\* Google: setting `google.searchTerm` replaces the assembled query, so `jobType`, `isRemote`, and `hoursOld` are then listed in that site's `unsupportedOptions`.
+
+Notes: Indeed's API accepts only **one** filter group per search (`hoursOld`, or `easyApply`, or `jobType`/`isRemote` together); when you combine them the lower-precedence ones are reported in `unsupportedOptions`. "(day)" means the site filters at whole-day granularity, so a sub-day `hoursOld` is applied as one day. "(coarse)" means Google maps `hoursOld` to broad buckets (today/3 days/week/month). A `jobType` value a board cannot express (for example `perdiem`, `nights`, `summer`, `volunteer`) runs the search unfiltered and is reported in `unsupportedOptions`. Support for the blocked sites reflects what their request-building code sends and is not verified live.
 
 ## Limitations
 
@@ -216,7 +222,7 @@ Notes: Indeed's API accepts only **one** filter group per search (`hoursOld`, or
 
 LinkedIn searches globally and uses only `location`. Indeed uses `country`:
 
-Argentina, Australia, Austria, Bahrain, Belgium, Brazil, Canada, Chile, China, Colombia, Costa Rica, Czech Republic, Denmark, Ecuador, Egypt, Finland, France, Germany, Greece, Hong Kong, Hungary, India, Indonesia, Ireland, Israel, Italy, Japan, Kuwait, Luxembourg, Malaysia, Mexico, Morocco, Netherlands, New Zealand, Nigeria, Norway, Oman, Pakistan, Panama, Peru, Philippines, Poland, Portugal, Qatar, Romania, Saudi Arabia, Singapore, South Africa, South Korea, Spain, Sweden, Switzerland, Taiwan, Thailand, Turkey, Ukraine, United Arab Emirates, UK, USA, Uruguay, Venezuela, Vietnam
+Argentina, Australia, Austria, Bahrain, Bangladesh, Belgium, Brazil, Bulgaria, Canada, Chile, China, Colombia, Costa Rica, Croatia, Cyprus, Czech Republic, Denmark, Ecuador, Egypt, Estonia, Finland, France, Germany, Greece, Hong Kong, Hungary, India, Indonesia, Ireland, Israel, Italy, Japan, Kuwait, Latvia, Lithuania, Luxembourg, Malaysia, Malta, Mexico, Morocco, Netherlands, New Zealand, Nigeria, Norway, Oman, Pakistan, Panama, Peru, Philippines, Poland, Portugal, Qatar, Romania, Saudi Arabia, Singapore, Slovakia, Slovenia, South Africa, South Korea, Spain, Sweden, Switzerland, Taiwan, Thailand, Turkey, Ukraine, United Arab Emirates, United Kingdom (`uk`), United States (`usa`), Uruguay, Venezuela, Vietnam (the `CountryName` type exported from the package is the source of truth)
 
 ## FAQ
 

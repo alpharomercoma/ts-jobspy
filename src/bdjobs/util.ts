@@ -48,6 +48,41 @@ export function parseDate(dateText: string): Date | null {
   }
 }
 
+/** The only host (with its subdomains) a card's detail link may send a request to. */
+const SITE_HOST = 'bdjobs.com';
+
+/** Where a card's detail href resolves to, and whether the scraper may fetch it. */
+export interface DetailLink {
+  /** Absolute URL, resolved against the search host. */
+  url: string;
+  /** Hostname for error messages; the protocol when the URL has none (javascript:, data:). */
+  target: string;
+  /** True only for an http(s) URL on bdjobs.com or one of its subdomains. */
+  onSite: boolean;
+}
+
+/**
+ * Resolve a card's detail href and decide whether it may be fetched.
+ *
+ * Cards are scraped content, so an absolute (or protocol-relative) href would
+ * let the page steer the detail request at any host - an SSRF vector. Only
+ * http(s) URLs on bdjobs.com or a subdomain qualify; a suffix trick such as
+ * bdjobs.com.evil.example does not. Returns null when the href cannot be
+ * parsed at all.
+ */
+export function resolveDetailLink(href: string, baseUrl: string): DetailLink | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(href, baseUrl);
+  } catch {
+    return null;
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  const isHttp = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  const onSite = isHttp && (hostname === SITE_HOST || hostname.endsWith(`.${SITE_HOST}`));
+  return { url: parsed.href, target: hostname || parsed.protocol, onSite };
+}
+
 /**
  * Find job listing elements in the HTML
  */

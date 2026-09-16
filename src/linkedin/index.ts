@@ -107,12 +107,20 @@ export class LinkedIn implements Scraper {
     const resultsWanted = input.resultsWanted ?? 15;
     const targetCount = resultsWanted + skip;
 
+    // A jobType with no f_JT code cannot be expressed, so the search runs
+    // unfiltered; report the dropped filter rather than pretend it applied.
+    const unsupportedOptions: string[] = [];
+    if (input.jobType && jobTypeCode(input.jobType) === undefined) {
+      unsupportedOptions.push('jobType');
+    }
+
     const continueSearch = () => jobList.length < targetCount && start < 1000;
     const finish = (): JobResponse => {
       const all = [...errors, ...this.enrichmentErrors];
       return {
         jobs: jobList.slice(skip, skip + resultsWanted),
         ...(all.length > 0 && { errors: all }),
+        ...(unsupportedOptions.length > 0 && { unsupportedOptions }),
       };
     };
 
@@ -168,6 +176,21 @@ export class LinkedIn implements Scraper {
           return finish();
         }
 
+        // A guest search that hits the auth wall is redirected to a login page
+        // that answers 200 with no cards, so without this check it would read
+        // as a clean zero-match result.
+        const responseUrl: unknown = response.request?.res?.responseUrl;
+        if (
+          typeof responseUrl === 'string' &&
+          /authwall|\/login|linkedin\.com\/signup/.test(responseUrl)
+        ) {
+          // Caught below: fatal when nothing is collected yet, otherwise
+          // recorded and the partial result returned.
+          throw new LinkedInException(
+            `LinkedIn blocked the search with an auth wall (redirected to ${responseUrl})`
+          );
+        }
+
         const $ = cheerio.load(response.data as string);
         const jobCards = $('div.base-search-card').toArray();
 
@@ -175,14 +198,22 @@ export class LinkedIn implements Scraper {
           return finish();
         }
 
+        // Cards this page turned into a job (or that repeat one already seen).
+        // Zero on a page that has cards means the markup the parser relies on
+        // has moved, not that the search matched nothing.
+        let parsedOnPage = 0;
         for (const jobCard of jobCards) {
           const hrefTag = cheerio.load(jobCard)('a.base-card__full-link').first();
 
           if (hrefTag.length && hrefTag.attr('href')) {
             const href = hrefTag.attr('href')!.split('?')[0];
             const jobId = href.split('-').pop() ?? '';
+            if (!jobId) {
+              continue;
+            }
 
             if (seenIds.has(jobId)) {
+              parsedOnPage += 1;
               continue;
             }
             seenIds.add(jobId);
@@ -192,11 +223,15 @@ export class LinkedIn implements Scraper {
               const jobPost = await this.processJob(cheerio.load(jobCard), jobId, fetchDesc);
               if (jobPost) {
                 jobList.push(jobPost);
+                parsedOnPage += 1;
               }
               if (!continueSearch()) {
                 break;
               }
             } catch (e) {
+              // A timeout must end the scrape now, not be filed as one bad card
+              // and let the loop grind on (or read as a structure break below).
+              if (isAbortError(e)) throw e;
               const message = e instanceof Error ? e.message : String(e);
               log.error(`Error processing job: ${message}`);
               // Surface the drop so a systematically failing parser shows up as
@@ -204,6 +239,16 @@ export class LinkedIn implements Scraper {
               this.enrichmentErrors.push(`job ${jobId}: ${message}`);
             }
           }
+        }
+
+        if (parsedOnPage === 0) {
+          // Paging on would only repeat the failure, with a delay per page, so
+          // stop here. Caught below: fatal when nothing is collected yet,
+          // otherwise recorded and the partial result returned.
+          const count = jobCards.length;
+          throw new LinkedInException(
+            `LinkedIn page structure changed: ${count} ${count === 1 ? 'card' : 'cards'} found but none could be parsed`
+          );
         }
 
         if (continueSearch()) {

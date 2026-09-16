@@ -25,7 +25,7 @@ import {
   plainConverter,
 } from '../util';
 import { GoogleJobsException, RateLimitException } from '../exception';
-import { HEADERS_INITIAL, HEADERS_JOBS, ASYNC_PARAM } from './constant';
+import { ASYNC_PARAM, HEADERS_INITIAL, HEADERS_JOBS, WALL_MARKERS } from './constant';
 import { findJobInfo, findJobInfoInitialPage } from './util';
 
 const log = createLogger('Google');
@@ -43,7 +43,9 @@ export class Google implements Scraper {
   private parseErrors: string[] = [];
   private readonly url = 'https://www.google.com/search';
   private readonly jobsUrl = 'https://www.google.com/async/callback:550';
-  private readonly maxPages = 50;
+  // 100 pages of 10 keeps the ceiling in line with the ~1000 results the boards
+  // themselves stop at (a lower cap silently hid results 510+).
+  private readonly maxPages = 100;
 
   constructor(options: { proxies?: string[]; caCert?: string; userAgent?: string } = {}) {
     this.proxies = options.proxies;
@@ -222,7 +224,7 @@ export class Google implements Scraper {
     }
 
     const response = await this.session.get(this.url, {
-      headers: HEADERS_INITIAL,
+      headers: this.requestHeaders(HEADERS_INITIAL),
       params: { q: query, udm: '8' },
       signal: this.scraperInput.signal,
     });
@@ -238,6 +240,13 @@ export class Google implements Scraper {
 
     const patternFc = /<div jsname="Yust4d"[^>]+data-async-fc="([^"]+)"/;
     const htmlData = response.data as string;
+    // A 200 that is really a bot wall must be reported as a block, never as a
+    // clean empty result (it would otherwise parse to zero jobs and no cursor).
+    if (WALL_MARKERS.test(htmlData)) {
+      throw new GoogleJobsException(
+        'Google served its JavaScript-required interstitial instead of results: non-browser clients are blocked (a block, not an empty result)'
+      );
+    }
     const matchFc = htmlData.match(patternFc);
     const dataAsyncFc = matchFc ? matchFc[1] : null;
 
@@ -260,6 +269,11 @@ export class Google implements Scraper {
     return { forwardCursor: dataAsyncFc, jobs };
   }
 
+  /** Per-request headers carry a fixed user-agent; a caller-supplied one must win. */
+  private requestHeaders(base: Record<string, string>): Record<string, string> {
+    return this.userAgent ? { ...base, 'user-agent': this.userAgent } : base;
+  }
+
   private async getJobsNextPage(
     forwardCursor: string
   ): Promise<{ jobs: JobPost[]; nextCursor: string | null }> {
@@ -268,7 +282,7 @@ export class Google implements Scraper {
     }
 
     const response = await this.session.get(this.jobsUrl, {
-      headers: HEADERS_JOBS,
+      headers: this.requestHeaders(HEADERS_JOBS),
       params: {
         fc: forwardCursor,
         fcv: '3',

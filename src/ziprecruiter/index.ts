@@ -56,6 +56,16 @@ interface ZipRecruiterResponse {
   continue?: string;
 }
 
+/** One search page after windowing: what was enriched, passed over, and seen. */
+interface PageResult {
+  jobs: JobPost[];
+  /** Leading unique listings passed over (never enriched) to honor the offset. */
+  skipped: number;
+  /** Raw listings the board returned on this page, before windowing. */
+  listingCount: number;
+  nextToken: string | null;
+}
+
 export class ZipRecruiter implements Scraper {
   site = Site.ZIP_RECRUITER;
   proxies?: string[];
@@ -110,33 +120,37 @@ export class ZipRecruiter implements Scraper {
     const offset = input.offset ?? 0;
     const resultsWanted = input.resultsWanted ?? 15;
     // ZipRecruiter paginates via an opaque continue token (no offset param), so
-    // fetch enough to cover offset + resultsWanted, then slice off the leading
-    // `offset` rows at the end so offset is honored exactly.
-    const targetCount = offset + resultsWanted;
-    const maxPages = Math.ceil(targetCount / this.jobsPerPage);
+    // walk pages from the start, pass over the first `offset` listings without
+    // enriching them, and enrich only until the window is full. jobList then
+    // holds exactly [offset, offset + resultsWanted) of the board's order.
+    const maxPages = Math.ceil((offset + resultsWanted) / this.jobsPerPage);
+    let skipped = 0;
 
     const finish = (): JobResponse => {
       const all = [...errors, ...this.enrichmentErrors];
       return {
-        jobs: jobList.slice(offset, offset + resultsWanted),
+        jobs: jobList,
         ...(all.length > 0 && { errors: all }),
       };
     };
 
     for (let page = 1; page <= maxPages; page++) {
-      if (jobList.length >= targetCount) break;
+      if (jobList.length >= resultsWanted) break;
 
       log.info(`search page: ${page} / ${maxPages}`);
 
-      let jobs: JobPost[];
-      let nextToken: string | null;
+      let result: PageResult;
       try {
         // Pace pages inside the try so an abort during the delay is handled by
         // the same partial-results logic below, not thrown out of scrape().
         if (page > 1) {
           await sleep(this.delay * 1000, input.signal);
         }
-        ({ jobs, nextToken } = await this.findJobsInPage(continueToken));
+        result = await this.findJobsInPage(
+          continueToken,
+          offset - skipped,
+          resultsWanted - jobList.length
+        );
       } catch (e) {
         const failure = e instanceof Error ? e : new Error(String(e));
         if (failure.message.includes('Proxy')) {
@@ -151,24 +165,30 @@ export class ZipRecruiter implements Scraper {
         return finish();
       }
 
-      if (jobs.length > 0) {
-        jobList.push(...jobs);
-      } else {
-        break;
-      }
+      skipped += result.skipped;
+      jobList.push(...result.jobs);
 
-      if (!nextToken) break;
-      continueToken = nextToken;
+      // An empty page means the board has nothing more, whatever the window.
+      if (result.listingCount === 0) break;
+      if (!result.nextToken) break;
+      continueToken = result.nextToken;
     }
 
     return finish();
   }
 
+  /**
+   * Fetch one search page and enrich only the part of it that falls inside the
+   * requested window: pass over the first `skip` unique listings, then collect
+   * up to `want` jobs.
+   */
   private async findJobsInPage(
-    continueToken: string | null
-  ): Promise<{ jobs: JobPost[]; nextToken: string | null }> {
+    continueToken: string | null,
+    skip: number,
+    want: number
+  ): Promise<PageResult> {
     if (!this.session || !this.scraperInput) {
-      return { jobs: [], nextToken: null };
+      return { jobs: [], skipped: 0, listingCount: 0, nextToken: null };
     }
 
     const params = addParams(this.scraperInput);
@@ -195,30 +215,57 @@ export class ZipRecruiter implements Scraper {
 
     const resData = response.data;
     const jobsList = resData.jobs ?? [];
-    const nextContinueToken = resData.continue ?? null;
+    const nextToken = resData.continue ?? null;
 
-    const processedJobs = await this.mapWithConcurrency(
-      jobsList,
-      this.enrichmentConcurrency,
-      async (job): Promise<JobPost | null> => {
-        try {
-          return await this.processJob(job);
-        } catch (e) {
-          // A cancellation must abort the whole scrape, so re-throw it. Any
-          // other per-job failure (e.g. malformed job payload) is recorded and
-          // the slot yields null so one bad row can't kill the whole page.
-          if (this.isAbortError(e)) throw e;
-          const message = e instanceof Error ? e.message : String(e);
-          this.enrichmentErrors.push(`${job.listing_key}: ${message}`);
-          return null;
+    // Dedupe before any network work so window positions count unique listings
+    // in board order, then pass over the offset without enriching it.
+    const fresh = jobsList.filter((job) => {
+      const jobUrl = this.jobUrlFor(job.listing_key);
+      if (this.seenUrls.has(jobUrl)) return false;
+      this.seenUrls.add(jobUrl);
+      return true;
+    });
+    const skipped = Math.min(skip, fresh.length);
+    const jobs = await this.enrichWindow(fresh.slice(skipped), want);
+
+    return { jobs, skipped, listingCount: jobsList.length, nextToken };
+  }
+
+  /**
+   * Enrich listings in board order until `want` jobs are collected or the
+   * listings run out. Each batch is sized to the remaining deficit, so a
+   * listing that fails to process is replaced by the next one on the page and
+   * no listing outside the window is ever fetched.
+   */
+  private async enrichWindow(listings: ZipRecruiterJob[], want: number): Promise<JobPost[]> {
+    const jobs: JobPost[] = [];
+    let index = 0;
+
+    while (jobs.length < want && index < listings.length) {
+      const batch = listings.slice(index, index + (want - jobs.length));
+      index += batch.length;
+
+      const processed = await this.mapWithConcurrency(
+        batch,
+        this.enrichmentConcurrency,
+        async (job): Promise<JobPost | null> => {
+          try {
+            return await this.processJob(job);
+          } catch (e) {
+            // A cancellation must abort the whole scrape, so re-throw it. Any
+            // other per-job failure (e.g. malformed job payload) is recorded and
+            // the slot yields null so one bad row can't kill the whole page.
+            if (this.isAbortError(e)) throw e;
+            const message = e instanceof Error ? e.message : String(e);
+            this.enrichmentErrors.push(`job ${job.listing_key}: ${message}`);
+            return null;
+          }
         }
-      }
-    );
+      );
+      jobs.push(...processed.filter((job): job is JobPost => job !== null));
+    }
 
-    return {
-      jobs: processedJobs.filter((job): job is JobPost => job !== null),
-      nextToken: nextContinueToken,
-    };
+    return jobs;
   }
 
   /**
@@ -260,14 +307,33 @@ export class ZipRecruiter implements Scraper {
     return results;
   }
 
-  private async processJob(job: ZipRecruiterJob): Promise<JobPost | null> {
-    const title = job.name;
-    const jobUrl = `${this.baseUrl}/jobs//j?lvk=${job.listing_key}`;
+  /** Canonical listing URL: both the dedupe key and the detail link. */
+  private jobUrlFor(listingKey: string): string {
+    return `${this.baseUrl}/jobs//j?lvk=${listingKey}`;
+  }
 
-    if (this.seenUrls.has(jobUrl)) {
-      return null;
+  /**
+   * Null when `url` is an http(s) link on ziprecruiter.com or a subdomain of
+   * it; otherwise what makes it off-site (the hostname, or the scheme when
+   * there is no host), for the errors entry. Never returns the full link.
+   */
+  private offSiteReason(url: string): string | null {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return 'unparseable link';
     }
-    this.seenUrls.add(jobUrl);
+    const host = parsed.hostname.toLowerCase();
+    const onSite =
+      (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+      (host === 'ziprecruiter.com' || host.endsWith('.ziprecruiter.com'));
+    return onSite ? null : host || parsed.protocol;
+  }
+
+  private async processJob(job: ZipRecruiterJob): Promise<JobPost> {
+    const title = job.name;
+    const jobUrl = this.jobUrlFor(job.listing_key);
 
     let description = (job.job_description ?? '').trim();
     const listingType = job.buyer_type ?? '';
@@ -313,7 +379,7 @@ export class ZipRecruiter implements Scraper {
     const compMax = job.compensation_max ? Math.floor(job.compensation_max) : undefined;
     const compCurrency = job.compensation_currency;
 
-    const { descriptionFull, jobUrlDirect } = await this.getDescription(jobUrl);
+    const { descriptionFull, jobUrlDirect } = await this.getDescription(job.listing_key, jobUrl);
 
     const compensation: Compensation = {
       interval: compInterval as Compensation['interval'],
@@ -339,10 +405,19 @@ export class ZipRecruiter implements Scraper {
   }
 
   private async getDescription(
+    listingKey: string,
     jobUrl: string
   ): Promise<{ descriptionFull: string | null; jobUrlDirect: string | null }> {
-    if (!this.session) {
-      return { descriptionFull: null, jobUrlDirect: null };
+    const none = { descriptionFull: null, jobUrlDirect: null };
+    if (!this.session) return none;
+
+    // A detail fetch carries the session's headers and cookies, so only follow
+    // a link that stays on the board's own host. The job is kept either way;
+    // the entry names the host, never the full link.
+    const offSite = this.offSiteReason(jobUrl);
+    if (offSite !== null) {
+      this.enrichmentErrors.push(`job ${listingKey}: detail link points off-site (${offSite})`);
+      return none;
     }
 
     try {
@@ -352,8 +427,10 @@ export class ZipRecruiter implements Scraper {
       });
 
       if (response.status < 200 || response.status >= 400) {
-        this.enrichmentErrors.push(`${jobUrl}: description fetch returned HTTP ${response.status}`);
-        return { descriptionFull: null, jobUrlDirect: null };
+        this.enrichmentErrors.push(
+          `job ${listingKey}: description fetch failed: HTTP ${response.status}`
+        );
+        return none;
       }
 
       const $ = cheerio.load(response.data as string);
@@ -408,9 +485,9 @@ export class ZipRecruiter implements Scraper {
       // unenriched job, so re-throw it instead of recording an enrichment error.
       if (this.isAbortError(e)) throw e;
       this.enrichmentErrors.push(
-        `${jobUrl}: description fetch failed - ${e instanceof Error ? e.message : String(e)}`
+        `job ${listingKey}: description fetch failed: ${e instanceof Error ? e.message : String(e)}`
       );
-      return { descriptionFull: null, jobUrlDirect: null };
+      return none;
     }
   }
 
