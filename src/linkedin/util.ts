@@ -106,3 +106,12 @@ export function isJobRemote(
 
   return remoteKeywords.some((keyword) => fullString.includes(keyword));
 }
+
+/**
+ * LinkedIn's guest search answers a genuine end of results (or a `start` past
+ * the last page) with a bare doctype and an empty comment, nothing else
+ * (verified live 2026-09-16). Any other zero-card body is not a results page.
+ */
+export function isEndOfResultsPage(body: unknown): boolean {
+  return typeof body === 'string' && /^\s*<!DOCTYPE html>\s*(?:<!---->\s*)+$/i.test(body);
+}

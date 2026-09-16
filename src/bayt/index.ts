@@ -17,7 +17,7 @@ import {
   Country,
   type Scraper,
 } from '../model';
-import { createSession, createLogger, randomDelay } from '../util';
+import { createSession, createLogger, randomDelay, loadHtml } from '../util';
 import { BaytException, JobSpyException, RateLimitException } from '../exception';
 
 const log = createLogger('Bayt');
@@ -48,6 +48,7 @@ export class BaytScraper implements Scraper {
 
   async scrape(input: ScraperInput): Promise<JobResponse> {
     this.session = createSession({
+      siteDomain: 'bayt.com',
       proxies: this.proxies,
       caCert: this.caCert,
       userAgent: this.userAgent,
@@ -176,7 +177,7 @@ export class BaytScraper implements Scraper {
       throw new BaytException(`Bayt responded with status code ${response.status}`);
     }
 
-    const $ = cheerio.load(response.data as string);
+    const $ = loadHtml(response.data as string);
     const jobListings = $('li[data-js-job]').toArray();
 
     log.debug(`Found ${jobListings.length} job listing elements`);

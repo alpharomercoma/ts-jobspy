@@ -117,8 +117,15 @@ describe('LinkedIn: a stale card structure is an error, not an empty result', ()
     expect(get).toHaveBeenCalledTimes(1);
   });
 
-  it('still resolves empty for a genuine page with zero cards', async () => {
-    fakeSession(page([]));
+  it('still resolves empty for the genuine end-of-results page', async () => {
+    // What LinkedIn actually answers past the last result (verified live
+    // 2026-09-16): a bare doctype and an empty comment. See
+    // test/linkedin-page-guards.test.ts for why any other zero-card body errors.
+    fakeSession({
+      status: 200,
+      data: '<!DOCTYPE html>\n<!---->',
+      request: { res: { responseUrl: SEARCH_URL } },
+    });
     await expect(new LinkedIn({}).scrape(input())).resolves.toEqual({ jobs: [] });
   });
 });

@@ -364,3 +364,72 @@ Verified not an issue:
 Live after all fixes (residential IP): Indeed and LinkedIn ok; Google, Glassdoor,
 ZipRecruiter, Bayt, Naukri, BDJobs all report 'error' with the specific reason (wall,
 403 TLS block, 406, moved), none report a misleading 'empty'.
+
+
+## Stress, fuzz and load round (2026-09-17, consumer harness + codex gpt-5.6-luna + agy gemini-3.1-pro)
+
+Method: the built tarball was installed in a separate consumer project (`../ts-jobspy-stress`) and driven through an intercepting proxy reached via the public `proxies` + `caCert` options (real TLS, real proxy agents, real axios/retry stack). Real Indeed and LinkedIn responses were recorded once and replayed; every scenario is offline except the live limit script.
+
+### Findings fixed (all under TDD, tests named)
+
+| # | Scenario | Symptom before | Fix | Test |
+|---|----------|----------------|-----|------|
+| 1 | First proxied request with `caCert` | `unable to verify the first certificate`: https-proxy-agent and socks-proxy-agent apply constructor options to the proxy hop only, so `caCert` was silently ignored for every tunneled TLS connection (README claimed http(s) proxies were covered) | `CaHttpsProxyAgent` / `CaSocksProxyAgent` inject the CA into the tunneled `connect()` options; SOCKS now covered too | test/ca-cert-proxy.test.ts (real TLS origin, CONNECT proxy, SOCKS5 server) |
+| 2 | 200KB gzip body inflating to 200MB | `FATAL ERROR: JavaScript heap out of memory`: the consumer process died | `maxContentLength` 16MB (decompressed) | test/response-limits.test.ts |
+| 3 | Origin trickles 1 byte / 5s, no `timeoutMs` | Scrape never ends (axios `timeout` is inactivity only); still running after 90s | Total per-request deadline of 2x the inactivity timeout, composed with the caller's AbortSignal, code `ERR_DEADLINE` | test/response-limits.test.ts |
+| 4 | 302 to another host | Followed, then "responded with status code 404" from the other host | `siteDomain` per scraper + `beforeRedirect` refusal naming the destination | test/redirect-policy.test.ts |
+| 5 | Body over cap / refused redirect / deadline | Retried up to 3 times (the bomb downloaded again, 5s wasted) | `NON_TRANSIENT_ERROR_CODES` excluded from axios-retry | test/response-limits.test.ts |
+| 6 | Description with a 100k-char token around "@" | `extractEmailsFromText` took 55s (quadratic backtracking) | Bounded quantifiers (RFC 5321 lengths) | test/parser-limits.test.ts |
+| 7 | 50k nested `<div>` in a description | Stack overflow in turndown (~2000 levels) and cheerio's serializer (~5000); parse5 quadratic in depth (50k: 18s, a 16MB page: hours) | Linear `scanHtml`/`htmlDepth` pre-check; converters fall back to a tag strip past 256 levels or 2MB; `loadHtml` refuses such full pages | test/parser-limits.test.ts, test/linkedin-page-guards.test.ts |
+| 8 | LinkedIn: truncated page repeating the same cards | Counted as progress; walked toward the 1000-result cap with a 3-7s delay per page (45s+ "hang") | A page adding zero new jobs ends the search | test/linkedin-page-guards.test.ts |
+| 9 | LinkedIn: empty body / JSON / binary / block page with HTTP 200 | Reported `empty` | Only the real end-of-results marker (`<!DOCTYPE html>` + `<!---->`, verified live) is empty; anything else is `error` | test/linkedin-page-guards.test.ts |
+| 10 | `timeoutMs: 1e12` | `TimeoutOverflowWarning`, timer fired after 1ms, every site "timed out after 1000000000000ms" | Max 2147483647 | test/options-limits.test.ts |
+| 11 | Null-prototype object as any option | `TypeError: Cannot convert object to primitive value` out of the error formatter | `describe()` never throws; always `InvalidInputError` | test/options-limits.test.ts |
+| 12 | `proxies: 'not a url'` | Every site: `TypeError: Invalid URL` at request time | Each entry must form an http/https/socks4/socks5 URL with a host | test/options-limits.test.ts |
+| 13 | `caCert` missing / directory / not PEM | Every site: ENOENT / EISDIR / TLS error at request time | Validated at call start | test/options-limits.test.ts |
+| 14 | 1MB `searchTerm`, 100KB `location`/`userAgent`, 10k `companyIds` | LinkedIn: `write EPIPE` / `read ECONNRESET` (request line too long) | Caps: 1000 / 500 / 1024 (+ no control characters) / 100 | test/options-limits.test.ts |
+| 15 | Corrupted Indeed payload (`baseSalary.range.max` = 0 or -1) | Job emitted with `minAmount > maxAmount` | Negative, non-finite, or inverted ranges are nulled | test/salary-sanity.test.ts |
+
+### Held up (verified, no change needed)
+
+- Status codes 4xx/5xx/999, empty/garbage/HTML/JSON/truncated bodies, content-length lies, resets before and mid-body, redirect loops, header floods (Node `Parse Error: Header overflow`), wrong `content-encoding`, UTF-16 bodies: all `error` with a specific message, never `empty`, never a rejection of `scrapeJobs`.
+- `timeoutMs` under load: 300 concurrent scrapes against a 3s-latency origin with `timeoutMs: 500` all reported the timeout within ~510ms; active handles back to baseline, no `MaxListenersExceededWarning`, no unhandled rejection.
+- Load: 200 concurrent scrapes (400 requests) in 1.3s, event-loop lag 37ms; 2000 scrapes in 20 rounds of 100: heap 22MB after GC (no leak), handles 3.
+- Mutation fuzzing (570 corrupted Indeed JSON + LinkedIn HTML pages over three seeds, including `__proto__` keys and script/`javascript:` injection): no rejection, no prototype pollution, no `empty` for a corrupted page, per-job failures recorded as `partial`.
+- Option fuzzing (400 random option objects): every rejection is `InvalidInputError` except values that throw on property access (a Proxy trap), which propagate as the caller's own error.
+- Live (2026-09-16): Indeed 500 jobs in 4.5s (111 jobs/s, all unique), offset 480 overlaps the first 500 by 20 (a live index shifts), offset 5000 past the end is `empty`, 10 concurrent x30 all `ok`; LinkedIn 60 jobs at 2.1 jobs/s, 8 with html descriptions, offset 995 `empty` (marker page), gibberish term returns LinkedIn's fallback results; both sites + `dedupe: 'content'` + `strict` fine.
+
+### Known limits kept
+
+- The event loop is blocked while a page is parsed; a 16MB (cap) page of wide, shallow markup still costs seconds of CPU. Bounded, not eliminated.
+- The Proxy-trap case above: an option object whose getters throw is the caller's bug and is reported as such.
+
+### Re-review triage (codex gpt-5.6-luna xhigh: 16 findings; agy gemini-3.1-pro: 12 findings)
+
+Fixed (each with a test in test/review2-fixes.test.ts unless noted):
+
+- codex 1 (high): `sanitizeHtml`'s fallback decoded `&lt;img onerror&gt;` into live markup. The `html` fallback is now HTML-escaped text.
+- codex 2 (high): depth guard bypass. parse5 nests `<div/>` (self-closing syntax only closes foreign elements) and ignores a stray `</span>`; `htmlDepth` now simulates the parser's open-element stack (void elements, foreign content, implied end tags for p/li/dt/dd/table parts/option/a, scoped stray end tags). Verified against cheerio: `<div/>` x1000 nests 1002 deep, `<p>` x300 nests 3.
+- codex 3 / agy 5 (high): `scanHtml` lowercased the whole input per `<script>`/`<style>` (5s for 50k script tags). Now a case-insensitive regex search from the current position.
+- codex 4 / agy 7 (medium): tokenizer ended a tag at a `>` inside a quoted attribute value and a comment at the first `>`. Quoted values are skipped as a unit; comments run to `-->`. (CDATA in HTML content is a bogus comment ending at the first `>` in parse5 too, so that part of the claim was not a defect.)
+- codex 5 (medium): the "2 MB" limit measures string length; documented as 2 million characters.
+- codex 6 / agy 10 (medium): bounded email regex reported the last 64 characters of an overlong local part; a lookbehind pins the candidate to a token start.
+- codex 7 (medium): a bare `<!DOCTYPE html>` counted as LinkedIn's end-of-results marker; the empty comment is now required.
+- codex 8 (medium): `jobType` errors interpolated non-strings (TypeError); explicit `null` for any option silently took the default. Both are `InvalidInputError` now.
+- codex 9 / agy 9 (medium): `HTTP://host` passed validation but `formatProxy` prepended another `http://`; scheme checks are case-insensitive. Credentials that are not valid percent-encoding are rejected at validation.
+- codex 10 (medium): `httpAgent` used the plain proxy agent, so an `https://` proxy's own certificate was not checked against `caCert` for plain-http targets (test in test/ca-cert-proxy.test.ts with a TLS CONNECT proxy).
+- codex 11 (medium): `caCert` accepted any file with a BEGIN marker; every PEM block must now parse as an X509Certificate.
+- codex 12 (medium): `proxies` had no size bound; at most 1000 entries of 2048 characters.
+- codex 13 (medium): Google's locale domains (google.com.ph, google.co.uk, consent.google.com) were refused as off-site; `siteDomain` accepts a RegExp and Google passes one (test/google-site-domain.test.ts).
+- codex 14, 15 / agy 12 (low): redirect tests now assert the off-site host was never contacted; the SOCKS fixture buffers fragmented input; origins use 127.0.0.1; timing budgets widened to 2s (the defects they catch cost 7-55s).
+- codex 16 (low): README/CLAUDE.md claims aligned (caCert is read at validation and per session; character limit; escaped fallback).
+- agy 1 (critical as filed): `removeAttributes` parsed unguarded. Every caller passes a subtree of a page that already went through `loadHtml`, so it was not reachable, but it is guarded now (test in test/review2-fixes.test.ts).
+- agy 8 (medium): a corrupted direct salary range now falls back to a salary stated in the description (test/salary-sanity.test.ts).
+
+Rejected after verification:
+
+- agy 2 ("CA lost via shallow copy"): test/ca-cert-proxy.test.ts proves the tunneled TLS trusts the CA through http, https and SOCKS proxies; the subclass passes the modified options to the parent `connect`, which uses them for `tls.connect`.
+- agy 3 ("timeoutMs x 2 overflows the timer"): the deadline is derived from the session's inactivity timeout (10-30s), never from `timeoutMs`.
+- agy 4 ("isAbortError ignores ECONNABORTED/ERR_DEADLINE"): a per-request timeout during enrichment is a per-job failure by design (recorded, `partial`), not a whole-scrape abort; and axios-retry's own `isNetworkError` already excludes `ECONNABORTED`, so nothing changed there.
+- agy 6 ("Indeed country TLDs"): Indeed is always `{code}.indeed.com` (see `Country` in src/model.ts), never `indeed.co.uk`.
+- agy 11 (`caCert` read per session): the file is small and read once per site session; documented rather than plumbed through eight scrapers.

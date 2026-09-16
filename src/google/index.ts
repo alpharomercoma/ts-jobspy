@@ -64,6 +64,9 @@ export class Google implements Scraper {
     this.parseErrors = [];
 
     this.session = createSession({
+      // Google answers from locale domains (google.com.ph, google.co.uk) and the
+      // consent host; a look-alike such as google.com.evil.example does not match.
+      siteDomain: /(^|\.)google\.[a-z]{2,3}(\.[a-z]{2})?$/,
       proxies: this.proxies,
       caCert: this.caCert,
       userAgent: this.userAgent,

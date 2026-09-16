@@ -153,6 +153,7 @@ export class Glassdoor implements Scraper {
     }
 
     this.session = createSession({
+      siteDomain: new URL(this.baseUrl).hostname.replace(/^www\./, ''),
       proxies: this.proxies,
       caCert: this.caCert,
       hasRetry: true,

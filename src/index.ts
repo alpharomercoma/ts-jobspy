@@ -415,6 +415,17 @@ async function scrapeSite(
   }
 }
 
+/** Finite, non-negative amounts with min <= max when both are present. */
+function saneRange(minAmount: number | null, maxAmount: number | null): boolean {
+  const sane = (amount: number | null) =>
+    amount === null || (Number.isFinite(amount) && amount >= 0);
+  return (
+    sane(minAmount) &&
+    sane(maxAmount) &&
+    !(minAmount !== null && maxAmount !== null && minAmount > maxAmount)
+  );
+}
+
 /** Flatten a scraper's JobPost into the public Job shape. */
 function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
   let interval: string | null = null;
@@ -448,7 +459,24 @@ function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
       minAmount = data.minAmount ?? null;
       maxAmount = data.maxAmount ?? null;
     }
-  } else if (resolved.country === Country.USA && post.description) {
+  }
+
+  // An impossible range is not data: a corrupted payload can carry a negative,
+  // non-finite, or inverted range. Drop it, and let a salary stated in the
+  // description stand in for it below.
+  if (!saneRange(minAmount, maxAmount)) {
+    minAmount = null;
+    maxAmount = null;
+    salarySource = null;
+  }
+
+  if (
+    minAmount === null &&
+    maxAmount === null &&
+    (!post.compensation || salarySource === null) &&
+    resolved.country === Country.USA &&
+    post.description
+  ) {
     const extracted = extractSalary(post.description, {
       enforceAnnualSalary: resolved.enforceAnnualSalary,
     });
@@ -459,6 +487,11 @@ function toJob(post: JobPost, site: string, resolved: ResolvedOptions): Job {
       currency = extracted.currency;
       salarySource = SalarySource.DESCRIPTION;
     }
+  }
+
+  if (!saneRange(minAmount, maxAmount)) {
+    minAmount = null;
+    maxAmount = null;
   }
 
   if (minAmount === null && maxAmount === null) {

@@ -30,10 +30,12 @@ import {
   currencyFromSymbol,
   intervalFromText,
   removeAttributes,
+  loadHtml,
 } from '../util';
 import { LinkedInException, RateLimitException } from '../exception';
 import { HEADERS } from './constant';
 import {
+  isEndOfResultsPage,
   jobTypeCode,
   parseJobType,
   parseJobLevel,
@@ -78,6 +80,7 @@ export class LinkedIn implements Scraper {
     this.scraperInput = input;
 
     this.session = createSession({
+      siteDomain: 'linkedin.com',
       proxies: this.proxies,
       caCert: this.caCert,
       userAgent: this.userAgent,
@@ -191,10 +194,20 @@ export class LinkedIn implements Scraper {
           );
         }
 
-        const $ = cheerio.load(response.data as string);
+        const $ = loadHtml(response.data as string);
         const jobCards = $('div.base-search-card').toArray();
 
         if (jobCards.length === 0) {
+          // LinkedIn answers a genuine end of results with a bare doctype and
+          // an empty comment. Anything else with no cards is not a results
+          // page (a block page, an error body, a markup change) and must not
+          // read as a clean empty result. Caught below: fatal when nothing is
+          // collected yet, otherwise recorded and the partial result returned.
+          if (!isEndOfResultsPage(response.data)) {
+            throw new LinkedInException(
+              'LinkedIn returned an unrecognized page: no job cards and not the end-of-results marker (blocked or page structure changed)'
+            );
+          }
           return finish();
         }
 
@@ -202,6 +215,7 @@ export class LinkedIn implements Scraper {
         // Zero on a page that has cards means the markup the parser relies on
         // has moved, not that the search matched nothing.
         let parsedOnPage = 0;
+        let newOnPage = 0;
         for (const jobCard of jobCards) {
           const hrefTag = cheerio.load(jobCard)('a.base-card__full-link').first();
 
@@ -224,6 +238,7 @@ export class LinkedIn implements Scraper {
               if (jobPost) {
                 jobList.push(jobPost);
                 parsedOnPage += 1;
+                newOnPage += 1;
               }
               if (!continueSearch()) {
                 break;
@@ -249,6 +264,14 @@ export class LinkedIn implements Scraper {
           throw new LinkedInException(
             `LinkedIn page structure changed: ${count} ${count === 1 ? 'card' : 'cards'} found but none could be parsed`
           );
+        }
+
+        if (newOnPage === 0) {
+          // Every card on this page was already collected: the server is
+          // repeating itself (or ignoring `start`), so paging on cannot add
+          // anything and would only pay a delay per page up to the cap.
+          log.info('LinkedIn: page added no new jobs, ending the search');
+          return finish();
         }
 
         if (continueSearch()) {
@@ -413,7 +436,7 @@ export class LinkedIn implements Scraper {
         return {};
       }
 
-      const $ = cheerio.load(response.data as string);
+      const $ = loadHtml(response.data as string);
 
       // Get description
       const divContent = $('div.show-more-less-html__markup').first();

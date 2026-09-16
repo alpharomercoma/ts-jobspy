@@ -6,7 +6,6 @@
  */
 
 import type { AxiosInstance } from 'axios';
-import * as cheerio from 'cheerio';
 import {
   type JobPost,
   type JobResponse,
@@ -27,6 +26,7 @@ import {
   plainConverter,
   removeAttributes,
   extractEmailsFromText,
+  loadHtml,
 } from '../util';
 import { RateLimitException, ZipRecruiterException } from '../exception';
 import { HEADERS, COOKIE_DATA } from './constant';
@@ -98,6 +98,7 @@ export class ZipRecruiter implements Scraper {
     this.enrichmentErrors = [];
 
     this.session = createSession({
+      siteDomain: 'ziprecruiter.com',
       proxies: this.proxies,
       caCert: this.caCert,
       userAgent: this.userAgent,
@@ -433,7 +434,7 @@ export class ZipRecruiter implements Scraper {
         return none;
       }
 
-      const $ = cheerio.load(response.data as string);
+      const $ = loadHtml(response.data as string);
       const jobDescrDiv = $('div.job_description');
       const companyDescrSection = $('section.company_description');
 

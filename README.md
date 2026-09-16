@@ -62,8 +62,8 @@ scrapeJobs(options)
 ├── sites (SiteName | SiteName[]):
 │    'indeed' | 'linkedin' | 'ziprecruiter' | 'glassdoor' | 'google' | 'bayt' | 'naukri' | 'bdjobs'
 │    default: the currently working sites (indeed, linkedin)
-├── searchTerm (string)
-├── location (string)
+├── searchTerm (string): at most 1000 characters
+├── location (string): at most 500 characters
 ├── distance (number): search radius in miles, default 50
 ├── jobType (string): fulltime, parttime, internship, contract, ...
 ├── isRemote (boolean)
@@ -79,15 +79,19 @@ scrapeJobs(options)
 ├── dedupe ('none' | 'url' | 'content' | boolean): default 'none'
 │    'url' = exact URL match; 'content' (= true) = normalized title+company+location
 ├── strict (boolean): reject the whole call if any requested site fails or is interrupted; default false
-├── timeoutMs (number): abort a site's scrape after this many ms and report it as an error; default none
+├── timeoutMs (number): abort a site's scrape after this many ms and report it as an error;
+│    default none, max 2147483647 (the largest delay a Node timer accepts)
 ├── siteConcurrency (number): how many sites are scraped in flight at once;
 │    default all requested sites concurrently, 1 = sequential (gentler on your IP)
-├── proxies (string | string[]): 'user:pass@host:port', rotated per request
-├── caCert (string): PEM file trusted for direct HTTPS and HTTPS-proxy connections
-├── userAgent (string)
+├── proxies (string | string[]): 'user:pass@host:port' (http), 'https://...', 'socks5://...'
+│    or 'socks4://...'; rotated per request; each entry must form a usable proxy URL;
+│    at most 1000 entries of at most 2048 characters
+├── caCert (string): path to a PEM certificate bundle, trusted for every HTTPS connection
+│    (direct, through an http(s) proxy, or through a SOCKS proxy); validated when the call starts
+├── userAgent (string): at most 1024 characters, no control characters
 ├── verbose (0 | 1 | 2): 0 errors only (default), 1 +warnings, 2 +info
-├── linkedin ({ fetchDescription?, companyIds? }): LinkedIn-specific options
-└── google ({ searchTerm? }): verbatim Google Jobs query
+├── linkedin ({ fetchDescription?, companyIds? }): LinkedIn-specific options; at most 100 companyIds
+└── google ({ searchTerm? }): verbatim Google Jobs query, at most 1000 characters
 ```
 
 ## Result schema
@@ -164,7 +168,8 @@ GraphQL API returns 100 jobs per request and dominates throughput.
 - **Input safety**: `searchTerm`/`location` are safely escaped into Indeed's GraphQL query
   (no injection). Options are strictly validated before any request, and unknown option
   keys are rejected rather than silently ignored.
-- **`caCert`**: path to a regular PEM file (read once, synchronously, when the scrape starts) trusted for direct HTTPS connections and for `http(s)://` proxies (e.g. behind a TLS-inspecting proxy). SOCKS proxies use the system trust store.
+- **`caCert`**: path to a regular PEM file, read synchronously when the options are validated (every certificate block must parse, else `InvalidInputError`) and again when each site's session is created. It is trusted for every TLS connection: a direct HTTPS request, the hop to an `https://` proxy, and the connection tunneled through an `http(s)://` or SOCKS proxy. The proxy agents only apply TLS options to the proxy hop by themselves, so the CA is injected into the tunneled connection explicitly.
+- **Response limits**: a response body is capped at 16 MB after decompression (a small gzip body that inflates to hundreds of MB is rejected instead of exhausting the process heap), a redirect that leaves the board's domain is refused with an error naming the destination instead of being followed, and a page or description nested deeper than 256 elements (as the HTML parser would build it: `<div/>` opens an element, stray end tags are ignored, optional end tags are implied) or longer than 2 million characters is refused (page) or reduced to its text (description; HTML-escaped when the caller asked for `html`) rather than handed to the HTML parsers, whose cost grows quadratically with nesting depth. Every request also has a total deadline of twice its inactivity timeout (the Indeed API and LinkedIn search pages use a 10 s inactivity timeout, so 20 s; LinkedIn job pages 10 s; other requests 60 s), because a server that trickles a byte every few seconds would otherwise hold a scrape open indefinitely even without `timeoutMs`. Failures that cannot succeed on retry (body over the cap, refused redirect, deadline, cancelled request) are not retried.
 - **`timeoutMs`**: threads an `AbortSignal` into every scraper's requests and paced delays,
   so a timeout actually aborts in-flight work, not just the wait. If a site had already
   collected some jobs when the timeout fired, they are returned as `status: 'partial'`

@@ -114,6 +114,7 @@ export class Indeed implements Scraper {
     this.seenUrls.clear();
 
     this.session = createSession({
+      siteDomain: 'indeed.com',
       proxies: this.proxies,
       caCert: this.caCert,
     });

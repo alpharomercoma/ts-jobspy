@@ -89,6 +89,7 @@ export class Naukri implements Scraper {
     this.scraperInput = input;
 
     this.session = createSession({
+      siteDomain: 'naukri.com',
       proxies: this.proxies,
       caCert: this.caCert,
       userAgent: this.userAgent,

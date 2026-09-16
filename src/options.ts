@@ -5,6 +5,8 @@
  * throws InvalidInputError instead of silently falling back to a default.
  */
 
+import { X509Certificate } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { InvalidInputError } from './exception';
 import {
   type Country,
@@ -248,6 +250,38 @@ const SITE_NAMES: readonly SiteName[] = [...WORKING_SITES, ...UNDER_MAINTENANCE_
 // unbounded pagination attempt (boards themselves stop near 1000 results).
 const MAX_RESULTS_WANTED = 10_000;
 const MAX_OFFSET = 100_000;
+/** Node timers take a 32-bit signed delay; anything larger fires after 1ms. */
+const MAX_TIMEOUT_MS = 2_147_483_647;
+/** Request-line and header budgets: past these a board resets the connection. */
+const MAX_SEARCH_TERM_LENGTH = 1000;
+const MAX_LOCATION_LENGTH = 500;
+const MAX_USER_AGENT_LENGTH = 1024;
+const MAX_COMPANY_IDS = 100;
+const MAX_PROXIES = 1000;
+const MAX_PROXY_LENGTH = 2048;
+const PEM_CERTIFICATE = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+const PROXY_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'socks4:', 'socks5:']);
+
+/** A value rendered for an error message; never throws (null-prototype objects have no toString). */
+function describe(value: unknown): string {
+  switch (typeof value) {
+    case 'string':
+      return value;
+    case 'number':
+    case 'boolean':
+    case 'undefined':
+      return String(value);
+    case 'bigint':
+      return `${value}n`;
+    case 'symbol':
+      return value.toString();
+    case 'function':
+      return 'function';
+    default:
+      if (value === null) return 'null';
+      return Array.isArray(value) ? `array(${value.length})` : 'object';
+  }
+}
 
 function assertInt(
   value: unknown,
@@ -257,23 +291,90 @@ function assertInt(
 ): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
     const range = max === Number.MAX_SAFE_INTEGER ? `>= ${min}` : `between ${min} and ${max}`;
-    throw new InvalidInputError(`${name} must be an integer ${range}, got: ${String(value)}`);
+    throw new InvalidInputError(`${name} must be an integer ${range}, got: ${describe(value)}`);
   }
   return value;
 }
 
 function assertBoolean(value: unknown, name: string): boolean {
   if (typeof value !== 'boolean') {
-    throw new InvalidInputError(`${name} must be a boolean, got: ${String(value)}`);
+    throw new InvalidInputError(`${name} must be a boolean, got: ${describe(value)}`);
   }
   return value;
 }
 
 function assertString(value: unknown, name: string): string {
   if (typeof value !== 'string') {
-    throw new InvalidInputError(`${name} must be a string, got: ${String(value)}`);
+    throw new InvalidInputError(`${name} must be a string, got: ${describe(value)}`);
   }
   return value;
+}
+
+function assertBoundedString(value: unknown, name: string, max: number): string {
+  const text = assertString(value, name);
+  if (text.length > max) {
+    throw new InvalidInputError(`${name} must be at most ${max} characters, got ${text.length}`);
+  }
+  return text;
+}
+
+function assertUserAgent(value: unknown, name: string): string {
+  const text = assertBoundedString(value, name, MAX_USER_AGENT_LENGTH);
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: header injection guard
+  if (/[\u0000-\u001f\u007f]/.test(text)) {
+    throw new InvalidInputError(`${name} must not contain control characters`);
+  }
+  return text;
+}
+
+/** Mirrors util's formatProxy: a bare host[:port] or user:pass@host[:port] is http. */
+function assertProxyUrl(proxy: string): void {
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(proxy) ? proxy : `http://${proxy}`;
+  let url: URL | undefined;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    url = undefined;
+  }
+  if (!url || !PROXY_PROTOCOLS.has(url.protocol) || url.hostname === '') {
+    throw new InvalidInputError(
+      `proxies entry is not a usable proxy URL (http, https, socks4 or socks5 with a host): ${proxy}`
+    );
+  }
+  try {
+    decodeURIComponent(url.username);
+    decodeURIComponent(url.password);
+  } catch {
+    throw new InvalidInputError(
+      `proxies entry has credentials that are not valid percent-encoding: ${proxy}`
+    );
+  }
+}
+
+function assertCaCert(value: unknown, name: string): string {
+  const file = assertString(value, name);
+  let content: string;
+  try {
+    content = readFileSync(file, 'utf8');
+  } catch {
+    throw new InvalidInputError(`${name} must be a readable file, got: ${file}`);
+  }
+  const blocks = content.match(PEM_CERTIFICATE) ?? [];
+  if (blocks.length === 0) {
+    throw new InvalidInputError(
+      `${name} must be a PEM certificate bundle, no BEGIN CERTIFICATE block in: ${file}`
+    );
+  }
+  for (const block of blocks) {
+    try {
+      new X509Certificate(block);
+    } catch {
+      throw new InvalidInputError(
+        `${name} must be a PEM certificate bundle, a certificate block in ${file} does not parse`
+      );
+    }
+  }
+  return file;
 }
 
 function optional<T>(
@@ -282,6 +383,17 @@ function optional<T>(
   check: (value: unknown, name: string) => T
 ): T | undefined {
   return value === undefined ? undefined : check(value, name);
+}
+
+/** An explicit null is neither a value nor an omission; refuse it rather than default silently. */
+function rejectNulls(obj: Record<string, unknown>, prefix: string): void {
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === null) {
+      throw new InvalidInputError(
+        `${prefix}${key} must not be null; omit the option or pass undefined`
+      );
+    }
+  }
 }
 
 function isPlainObject(value: unknown): boolean {
@@ -337,9 +449,10 @@ function rejectUnknownKeys(
 
 export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
   if (!isPlainObject(options)) {
-    throw new InvalidInputError(`options must be a plain object, got: ${String(options)}`);
+    throw new InvalidInputError(`options must be a plain object, got: ${describe(options)}`);
   }
   rejectUnknownKeys(options as Record<string, unknown>, KNOWN_OPTION_KEYS, '');
+  rejectNulls(options as Record<string, unknown>, '');
   if (options.linkedin !== undefined) {
     if (!isPlainObject(options.linkedin)) {
       throw new InvalidInputError('linkedin must be a plain object');
@@ -349,12 +462,14 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
       KNOWN_LINKEDIN_KEYS,
       'linkedin.'
     );
+    rejectNulls(options.linkedin as Record<string, unknown>, 'linkedin.');
   }
   if (options.google !== undefined) {
     if (!isPlainObject(options.google)) {
       throw new InvalidInputError('google must be a plain object');
     }
     rejectUnknownKeys(options.google as Record<string, unknown>, KNOWN_GOOGLE_KEYS, 'google.');
+    rejectNulls(options.google as Record<string, unknown>, 'google.');
   }
 
   const raw = options.sites ?? [...WORKING_SITES];
@@ -371,7 +486,7 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
         : rawName;
     if (typeof name !== 'string' || !SITE_NAMES.includes(name.toLowerCase() as SiteName)) {
       throw new InvalidInputError(
-        `Unknown site '${String(name)}'; valid sites: ${SITE_NAMES.join(', ')}`
+        `Unknown site '${describe(name)}'; valid sites: ${SITE_NAMES.join(', ')}`
       );
     }
     const site = mapStrToSite(name);
@@ -380,11 +495,12 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
 
   let jobType: JobType | undefined;
   if (options.jobType !== undefined) {
+    assertString(options.jobType, 'jobType');
     try {
       jobType = getEnumFromValue(options.jobType);
     } catch {
       throw new InvalidInputError(
-        `Unknown jobType '${options.jobType}'; examples: fulltime, parttime, internship, contract, temporary`
+        `Unknown jobType '${describe(options.jobType)}'; examples: fulltime, parttime, internship, contract, temporary`
       );
     }
   }
@@ -393,7 +509,7 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
   try {
     country = getCountryFromString(options.country ?? 'usa');
   } catch {
-    throw new InvalidInputError(`Unknown country '${String(options.country)}'`);
+    throw new InvalidInputError(`Unknown country '${describe(options.country)}'`);
   }
 
   if (options.descriptionFormat !== undefined) {
@@ -412,7 +528,7 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
       break;
     default:
       throw new InvalidInputError(
-        `Unknown descriptionFormat '${String(options.descriptionFormat)}'; valid: markdown, html, plain`
+        `Unknown descriptionFormat '${describe(options.descriptionFormat)}'; valid: markdown, html, plain`
       );
   }
 
@@ -429,13 +545,13 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
     dedupe = options.dedupe;
   } else {
     throw new InvalidInputError(
-      `Unknown dedupe mode '${String(options.dedupe)}'; valid: none, url, content (or a boolean)`
+      `Unknown dedupe mode '${describe(options.dedupe)}'; valid: none, url, content (or a boolean)`
     );
   }
 
   const verbose = options.verbose ?? 0;
   if (verbose !== 0 && verbose !== 1 && verbose !== 2) {
-    throw new InvalidInputError(`verbose must be 0, 1, or 2, got: ${String(verbose)}`);
+    throw new InvalidInputError(`verbose must be 0, 1, or 2, got: ${describe(verbose)}`);
   }
 
   let proxies: string[] | undefined;
@@ -450,6 +566,19 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
         'proxies must be a non-empty string or a non-empty array of non-empty strings'
       );
     }
+    if (proxies.length > MAX_PROXIES) {
+      throw new InvalidInputError(
+        `proxies must have at most ${MAX_PROXIES} entries, got ${proxies.length}`
+      );
+    }
+    for (const proxy of proxies) {
+      if (proxy.length > MAX_PROXY_LENGTH) {
+        throw new InvalidInputError(
+          `proxies entry must be at most ${MAX_PROXY_LENGTH} characters, got ${proxy.length}`
+        );
+      }
+      assertProxyUrl(proxy);
+    }
   }
 
   const linkedin = options.linkedin ?? {};
@@ -461,14 +590,25 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
     ) {
       throw new InvalidInputError('linkedin.companyIds must be an array of non-negative integers');
     }
+    if (linkedin.companyIds.length > MAX_COMPANY_IDS) {
+      throw new InvalidInputError(
+        `linkedin.companyIds must have at most ${MAX_COMPANY_IDS} entries, got ${linkedin.companyIds.length}`
+      );
+    }
   }
   const google = options.google ?? {};
-  optional(google.searchTerm, 'google.searchTerm', assertString);
+  optional(google.searchTerm, 'google.searchTerm', (v, n) =>
+    assertBoundedString(v, n, MAX_SEARCH_TERM_LENGTH)
+  );
 
   return {
     sites,
-    searchTerm: optional(options.searchTerm, 'searchTerm', assertString),
-    location: optional(options.location, 'location', assertString),
+    searchTerm: optional(options.searchTerm, 'searchTerm', (v, n) =>
+      assertBoundedString(v, n, MAX_SEARCH_TERM_LENGTH)
+    ),
+    location: optional(options.location, 'location', (v, n) =>
+      assertBoundedString(v, n, MAX_LOCATION_LENGTH)
+    ),
     distance: options.distance === undefined ? 50 : assertInt(options.distance, 'distance', 0),
     isRemote: optional(options.isRemote, 'isRemote', assertBoolean) ?? false,
     jobType,
@@ -488,14 +628,16 @@ export function resolveOptions(options: ScrapeOptions): ResolvedOptions {
     dedupe,
     strict: optional(options.strict, 'strict', assertBoolean) ?? false,
     timeoutMs:
-      options.timeoutMs === undefined ? undefined : assertInt(options.timeoutMs, 'timeoutMs', 1),
+      options.timeoutMs === undefined
+        ? undefined
+        : assertInt(options.timeoutMs, 'timeoutMs', 1, MAX_TIMEOUT_MS),
     siteConcurrency:
       options.siteConcurrency === undefined
         ? sites.length
         : Math.min(assertInt(options.siteConcurrency, 'siteConcurrency', 1), sites.length),
     proxies,
-    caCert: optional(options.caCert, 'caCert', assertString),
-    userAgent: optional(options.userAgent, 'userAgent', assertString),
+    caCert: optional(options.caCert, 'caCert', assertCaCert),
+    userAgent: optional(options.userAgent, 'userAgent', assertUserAgent),
     verbose,
     linkedin,
     google,

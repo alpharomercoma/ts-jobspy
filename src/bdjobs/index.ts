@@ -23,6 +23,7 @@ import {
   markdownConverter,
   plainConverter,
   removeAttributes,
+  loadHtml,
 } from '../util';
 import { BDJobsException, RateLimitException } from '../exception';
 import { HEADERS, SEARCH_PARAMS } from './constant';
@@ -79,6 +80,7 @@ export class BDJobs implements Scraper {
   async scrape(input: ScraperInput): Promise<JobResponse> {
     this.scraperInput = input;
     this.session = createSession({
+      siteDomain: 'bdjobs.com',
       proxies: this.proxies,
       caCert: this.caCert,
       userAgent: this.userAgent,
@@ -174,7 +176,7 @@ export class BDJobs implements Scraper {
           return finish();
         }
 
-        const $ = cheerio.load(response.data as string);
+        const $ = loadHtml(response.data as string);
         const jobCards = findJobListings($);
 
         if (!jobCards || jobCards.length === 0) {
@@ -378,7 +380,7 @@ export class BDJobs implements Scraper {
         return {};
       }
 
-      const $ = cheerio.load(response.data as string);
+      const $ = loadHtml(response.data as string);
 
       // Collect the description as HTML from whichever section is present, then
       // convert once per the requested format below.
