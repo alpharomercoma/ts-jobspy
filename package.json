@@ -1,6 +1,6 @@
 {
   "name": "ts-jobspy",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "TypeScript job scraper for Indeed, LinkedIn and more - honest per-site results, strict validation, cross-site dedupe",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
